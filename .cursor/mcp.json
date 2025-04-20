@@ -1,0 +1,18 @@
+{
+    "mcpServers": {
+        "sample": {
+            "command": "/home/xuananh/repo/mcp-server/.venv/bin/python",
+            "args": [
+                "/home/xuananh/repo/mcp-server/src/sample/sample_mcp_server.py"
+            ]
+        },
+        "selenium": {
+          "command": "/home/xuananh/repo/mcp-server/.venv/bin/python",
+          "args": [
+              "/home/xuananh/repo/mcp-server/src/selenium/main.py",
+              "--user_data_dir=/home/xuananh/.config/google-chrome-selenium-mcp-server",
+              "--port=9223"
+          ]
+        }
+    }
+}

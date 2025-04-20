@@ -1,0 +1,18 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+don't declare function parameters like this:
+
+```python
+def click_to_element(text: Optional[str] = None, class_name: Optional[str] = None, id: Optional[str] = None) -> str:
+```
+
+this cause error when Cursor calling tool: Invalid type for parameter 'text' in tool click_to_element
+
+let delcare function parameters like this:
+
+```python
+def click_to_element(text: str = '', class_name: str = '', id: str = '') -> str:
+```

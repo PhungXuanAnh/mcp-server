@@ -1,0 +1,28 @@
+{
+    "mcpServers": {
+        "selenium": {
+            "command": "bash",
+            "args": [
+                "-c",
+                "/home/xuananh/Downloads/servers/src/selenium/run.sh"
+            ]
+        },
+        "git-sse": {
+            "url": "http://localhost:6277/sse"
+        },
+        "git": {
+            "command": "bash",
+            "args": [
+                "-c",
+                "/home/xuananh/Downloads/servers/src/git/run.sh"
+            ]
+        },
+        "git1": {
+            "command": "/home/xuananh/repo/mcp-server/src/git/.venv/bin/python",
+            "args": [
+                "-m",
+                "mcp_server_git"
+            ]
+        }
+    }
+}
