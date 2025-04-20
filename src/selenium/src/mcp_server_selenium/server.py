@@ -34,9 +34,9 @@ class CheckPageReady(BaseModel):
     wait_seconds: int = Field(default=0, description="Optional seconds to wait before checking")
 
 class SeleniumTools(str, Enum):
-    NAVIGATE = "navigate"
-    TAKE_SCREENSHOT = "take_screenshot"
-    CHECK_PAGE_READY = "check_page_ready"
+    NAVIGATE = "selenium_navigate"
+    TAKE_SCREENSHOT = "selenium_take_screenshot"
+    CHECK_PAGE_READY = "selenium_check_page_ready"
 
 # Global variable to store WebDriver instance
 driver = None
@@ -138,12 +138,15 @@ def take_screenshot(filename: Optional[str] = None) -> str:
     screenshot_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate a filename if not provided
-    if not filename:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"screenshot_{timestamp}.png"
-    elif not filename.endswith(('.png', '.jpg', '.jpeg')):
-        filename = f"{filename}.png"
+    # if not filename:
+    #     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    #     filename = f"screenshot_{timestamp}.png"
+    # elif not filename.endswith(('.png', '.jpg', '.jpeg')):
+    #     filename = f"{filename}.png"
     
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"screenshot_{timestamp}.png"
+        
     screenshot_path = screenshot_dir / filename
     driver.save_screenshot(str(screenshot_path))
     
@@ -218,7 +221,7 @@ async def serve(browser: str, headless: bool) -> None:
             logger.info(f"Calling tool: {name} with arguments: {arguments}")
             
             try:
-                if name == SeleniumTools.NAVIGATE:
+                if name == SeleniumTools.NAVIGATE.value:
                     args = Navigate(**arguments)
                     # Ensure a reasonable timeout to avoid MCP timeout
                     if args.timeout > 20:
@@ -227,7 +230,7 @@ async def serve(browser: str, headless: bool) -> None:
                     result = navigate_to_url(args.url, args.timeout)
                     return [TextContent(type="text", text=result)]
                 
-                elif name == SeleniumTools.TAKE_SCREENSHOT:
+                elif name == SeleniumTools.TAKE_SCREENSHOT.value:
                     # Handle potentially nested structure in arguments
                     if isinstance(arguments.get('filename'), dict) and 'filename' in arguments['filename']:
                         # Extract the inner filename value
@@ -240,7 +243,7 @@ async def serve(browser: str, headless: bool) -> None:
                     result = take_screenshot(args.filename)
                     return [TextContent(type="text", text=result)]
                 
-                elif name == SeleniumTools.CHECK_PAGE_READY:
+                elif name == SeleniumTools.CHECK_PAGE_READY.value:
                     args = CheckPageReady(**arguments)
                     result = check_page_ready(args.wait_seconds)
                     return [TextContent(type="text", text=result)]
