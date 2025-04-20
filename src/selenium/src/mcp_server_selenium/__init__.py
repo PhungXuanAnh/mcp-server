@@ -3,7 +3,8 @@ from pathlib import Path
 import logging
 from logging.config import dictConfig
 import sys
-from .server import serve
+# from .server import serve
+from .server_already_open import serve
 
 
 LOGGING_CONFIG = {

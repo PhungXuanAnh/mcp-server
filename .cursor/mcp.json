@@ -4,7 +4,14 @@
             "command": "bash",
             "args": [
                 "-c",
-                "/home/xuananh/Downloads/servers/src/selenium/run.sh"
+                "/home/xuananh/repo/mcp-server/src/selenium/run.sh"
+            ]
+        },
+        "git1": {
+            "command": "/home/xuananh/repo/mcp-server/src/git/.venv/bin/python",
+            "args": [
+                "-m",
+                "mcp_server_git"
             ]
         }
     }

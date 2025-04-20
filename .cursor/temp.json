@@ -4,7 +4,7 @@
             "command": "bash",
             "args": [
                 "-c",
-                "/home/xuananh/Downloads/servers/src/selenium_mcp/run.sh --remote-debugging-port 9222"
+                "/home/xuananh/Downloads/servers/src/selenium/run.sh"
             ]
         },
         "git-sse": {
@@ -15,6 +15,13 @@
             "args": [
                 "-c",
                 "/home/xuananh/Downloads/servers/src/git/run.sh"
+            ]
+        },
+        "git1": {
+            "command": "/home/xuananh/repo/mcp-server/src/git/.venv/bin/python",
+            "args": [
+                "-m",
+                "mcp_server_git"
             ]
         }
     }

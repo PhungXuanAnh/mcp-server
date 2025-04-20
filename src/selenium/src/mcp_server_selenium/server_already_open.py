@@ -8,19 +8,14 @@ from typing import Optional
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import Tool, TextContent
 from pydantic import BaseModel, Field
-from webdriver_manager.firefox import GeckoDriverManager
-
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.firefox.options import Options as FirefoxOptions
-from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-
 
 # Define the data models for our tools
 class Navigate(BaseModel):
@@ -34,9 +29,9 @@ class CheckPageReady(BaseModel):
     wait_seconds: int = Field(default=0, description="Optional seconds to wait before checking")
 
 class SeleniumTools(str, Enum):
-    NAVIGATE = "navigate"
-    TAKE_SCREENSHOT = "take_screenshot"
-    CHECK_PAGE_READY = "check_page_ready"
+    NAVIGATE = "selenium_navigate"
+    TAKE_SCREENSHOT = "selenium_take_screenshot"
+    CHECK_PAGE_READY = "selenium_check_page_ready"
 
 # Global variable to store WebDriver instance
 driver = None
@@ -46,39 +41,25 @@ def initialize_driver(browser: str, headless: bool) -> webdriver.Remote:
     """Initialize and return a WebDriver instance based on browser choice"""
     global driver
     
-    if browser.lower() == "chrome":
-        options = ChromeOptions()
-        if headless:
-            options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        # Add option to disable timeouts
-        options.add_argument("--disable-hang-monitor")
-        options.add_argument("--disable-dev-shm-usage")
-        # Increase page load timeout
-        options.page_load_strategy = 'normal'
+    if browser.lower() != "chrome":
+        raise ValueError(f"Unsupported browser: {browser}. Only Chrome is supported.")
         
-        # Use the specified ChromeDriver path instead of ChromeDriverManager
-        chrome_driver_path = "/home/xuananh/Downloads/chromedriver-linux64/chromedriver"
-        service = ChromeService(executable_path=chrome_driver_path)
-        driver = webdriver.Chrome(service=service, options=options)
-        
-        # Set longer page load timeout (default is only 30 seconds)
-        driver.set_page_load_timeout(120)
-        driver.set_script_timeout(120)
-    elif browser.lower() == "firefox":
-        options = FirefoxOptions()
-        if headless:
-            options.add_argument("--headless")
-        service = FirefoxService(GeckoDriverManager().install())
-        driver = webdriver.Firefox(service=service, options=options)
-        driver.set_page_load_timeout(120)
-        driver.set_script_timeout(120)
-    else:
-        raise ValueError(f"Unsupported browser: {browser}")
+    options = ChromeOptions()
     
-    # Set default window size
-    driver.set_window_size(1366, 768)
+    # Connect to an already running Chrome instance with remote debugging port
+    options.debugger_address = "127.0.0.1:9222"
+    
+    # Note: When connecting to an existing browser, we don't need to set most
+    # of the previous options as they're already set by the browser instance
+    
+    # Just create the driver without specifying service or additional options
+    driver = webdriver.Chrome(options=options)
+    
+    # Set longer page load timeout
+    driver.set_page_load_timeout(120)
+    driver.set_script_timeout(120)
+    
+    # No need to set window size as we're using an existing browser window
     
     return driver
 
@@ -119,9 +100,9 @@ def navigate_to_url(url: str, timeout: int = 60) -> str:
         logger.info(f"Navigation timed out after {elapsed:.2f} seconds. Current URL: {current_url}")
         
         if current_url and current_url != "about:blank" and current_url != "data:,":
-            return f"Navigation to {url} started but timed out after {navigation_timeout} seconds. You can use check_page_ready tool to check if the page is loaded. Current URL: {current_url}"
+            return f"Navigation to {url} started but timed out after {navigation_timeout} seconds. You can use selenium_check_page_ready tool to check if the page is loaded. Current URL: {current_url}"
         else:
-            return f"Navigation to {url} timed out after {navigation_timeout} seconds, but may continue loading. You can use check_page_ready tool to check if the page is loaded. Current URL: {current_url}"
+            return f"Navigation to {url} timed out after {navigation_timeout} seconds, but may continue loading. You can use selenium_check_page_ready tool to check if the page is loaded. Current URL: {current_url}"
     except Exception as e:
         elapsed = time.time() - start_time
         logger.error(f"Error after {elapsed:.2f} seconds while navigating to {url}: {str(e)}")
@@ -186,9 +167,14 @@ async def serve(browser: str, headless: bool) -> None:
     logger = logging.getLogger(__name__)
     
     try:
-        # Initialize the WebDriver
-        logger.info(f"Initializing {browser} WebDriver (headless: {headless})")
-        initialize_driver(browser, headless)
+        # Initialize the WebDriver - only Chrome is supported
+        if browser.lower() != "chrome":
+            logger.warning(f"Browser {browser} is not supported, defaulting to Chrome")
+            browser = "chrome"
+            
+        logger.info(f"Connecting to existing Chrome instance at 127.0.0.1:9222")
+        # The headless parameter is ignored when connecting to existing instance
+        initialize_driver("chrome", False)
         
         # Create the MCP server with increased timeout
         server = Server("mcp-selenium")
@@ -263,7 +249,8 @@ async def serve(browser: str, headless: bool) -> None:
         logger.error(f"Error starting server: {str(e)}")
     
     finally:
-        # Clean up the WebDriver when done
+        # Clean up the WebDriver when done, but don't close the browser
+        # since we're connecting to an existing instance
         if driver is not None:
-            logger.info("Closing WebDriver")
+            logger.info("Disconnecting from Chrome instance (but leaving browser open)")
             driver.quit() 
