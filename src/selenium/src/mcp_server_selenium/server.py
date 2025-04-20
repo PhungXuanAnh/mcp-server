@@ -118,9 +118,9 @@ def navigate_to_url(url: str, timeout: int = 60) -> str:
         logger.info(f"Navigation timed out after {elapsed:.2f} seconds. Current URL: {current_url}")
         
         if current_url and current_url != "about:blank" and current_url != "data:,":
-            return f"Navigation to {url} started but timed out after {navigation_timeout} seconds. Current URL: {current_url}"
+            return f"Navigation to {url} started but timed out after {navigation_timeout} seconds. You can use check_page_ready tool to check if the page is loaded. Current URL: {current_url}"
         else:
-            return f"Navigation to {url} timed out after {navigation_timeout} seconds, but may continue loading"
+            return f"Navigation to {url} timed out after {navigation_timeout} seconds, but may continue loading. You can use check_page_ready tool to check if the page is loaded. Current URL: {current_url}"
     except Exception as e:
         elapsed = time.time() - start_time
         logger.error(f"Error after {elapsed:.2f} seconds while navigating to {url}: {str(e)}")
