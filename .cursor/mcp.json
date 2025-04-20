@@ -1,0 +1,11 @@
+{
+    "mcpServers": {
+        "selenium": {
+            "command": "bash",
+            "args": [
+                "-c",
+                "/home/xuananh/Downloads/servers/src/selenium/run.sh"
+            ]
+        }
+    }
+}
