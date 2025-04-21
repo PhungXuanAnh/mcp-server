@@ -1,10 +1,9 @@
 {
     "mcpServers": {
         "selenium": {
-            "command": "bash",
+            "command": "/home/xuananh/repo/mcp-server/.venv/bin/python",
             "args": [
-                "-c",
-                "/home/xuananh/repo/mcp-server/src/selenium/run.sh"
+                "/home/xuananh/repo/mcp-server/src/selenium/selenium_sync_server.py"
             ]
         },
         "git1": {
