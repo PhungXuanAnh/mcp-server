@@ -1,6 +1,8 @@
 # Standard library imports
 import logging
 import time
+import socket
+import subprocess
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -37,16 +39,77 @@ class SeleniumTools(str, Enum):
 driver = None
 
 # Helper functions for Selenium operations
+def check_chrome_debugger_port(port: int = 9222) -> bool:
+    """Check if Chrome is running with remote debugging port open"""
+    try:
+        # Try to connect to the port
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex(('127.0.0.1', port))
+            return result == 0
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error checking Chrome debugger port: {str(e)}")
+        return False
+
+def start_chrome(port: int = 9222) -> bool:
+    """Start Chrome with remote debugging enabled on specified port"""
+    logger = logging.getLogger(__name__)
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        user_data_dir = f"/tmp/chrome-debug-{timestamp}"
+        
+        logger.info(f"Starting Chrome with debugging port {port} and user data dir {user_data_dir}")
+        
+        # Start Chrome as a subprocess
+        cmd = [
+            "google-chrome-stable",
+            f"--remote-debugging-port={port}",
+            f"--user-data-dir={user_data_dir}",
+            "--no-first-run",
+            "--no-default-browser-check"
+        ]
+        
+        process = subprocess.Popen(
+            cmd, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE,
+            start_new_session=True  # Detach from the parent process
+        )
+        
+        # Wait a moment for Chrome to start
+        time.sleep(3)
+        
+        # Check if Chrome started correctly
+        if check_chrome_debugger_port(port):
+            logger.info(f"Chrome started successfully on port {port}")
+            return True
+        else:
+            logger.error("Failed to start Chrome or confirm debugging port is open")
+            return False
+    except Exception as e:
+        logger.error(f"Error starting Chrome: {str(e)}")
+        return False
+
 def initialize_driver(browser: str, headless: bool) -> webdriver.Remote:
     """Initialize and return a WebDriver instance based on browser choice"""
     global driver
+    logger = logging.getLogger(__name__)
     
     if browser.lower() != "chrome":
         raise ValueError(f"Unsupported browser: {browser}. Only Chrome is supported.")
+    
+    # Check if Chrome is already running with remote debugging
+    if not check_chrome_debugger_port():
+        logger.info("Chrome not detected on port 9222, attempting to start a new instance")
+        if not start_chrome():
+            raise RuntimeError("Failed to start Chrome browser")
+    else:
+        logger.info("Chrome already running with remote debugging port 9222")
         
     options = ChromeOptions()
     
-    # Connect to an already running Chrome instance with remote debugging port
+    # Connect to Chrome instance with remote debugging port
     options.debugger_address = "127.0.0.1:9222"
     
     # Note: When connecting to an existing browser, we don't need to set most
@@ -168,7 +231,7 @@ async def serve(browser: str, headless: bool) -> None:
             logger.warning(f"Browser {browser} is not supported, defaulting to Chrome")
             browser = "chrome"
             
-        logger.info(f"Connecting to existing Chrome instance at 127.0.0.1:9222")
+        logger.info(f"Checking for Chrome instance at 127.0.0.1:9222")
         # The headless parameter is ignored when connecting to existing instance
         initialize_driver("chrome", False)
         
