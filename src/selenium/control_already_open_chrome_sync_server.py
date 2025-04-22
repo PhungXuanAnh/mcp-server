@@ -1,14 +1,14 @@
 # Standard library imports
+import json
 import logging
-import time
 import socket
 import subprocess
-import json
+import time
 from datetime import datetime
 from enum import Enum
 from logging.config import dictConfig
 from pathlib import Path
-from typing import Optional, Tuple, List, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 # Third-party imports
@@ -19,9 +19,9 @@ from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 # Configure logging
 LOGGING_CONFIG = {
@@ -507,8 +507,20 @@ def get_response_body(driver: webdriver.Chrome, request_id: str):
         return None
 
 @mcp.tool()
-def selenium_navigate(url: str, timeout: int = 60) -> str:
-    """Navigate to a specified URL with configurable timeout"""
+def navigate(url: str, timeout: int = 60) -> str:
+    """Navigate to a specified URL with the Chrome browser.
+    
+    This tool navigates the browser to the provided URL. If the URL doesn't start with 
+    http:// or https://, https:// will be added automatically.
+    
+    Args:
+        url: The URL to navigate to. Will add https:// if protocol is missing.
+        timeout: Maximum time in seconds to wait for the navigation to complete.
+            Default is 60 seconds.
+    
+    Returns:
+        A message confirming navigation started or reporting any issues.
+    """
     global driver
     if driver is None:
         logger.info("WebDriver is not initialized, initializing now...")
@@ -549,9 +561,9 @@ def selenium_navigate(url: str, timeout: int = 60) -> str:
         logger.info(f"Navigation timed out after {elapsed:.2f} seconds. Current URL: {current_url}")
         
         if current_url and current_url != "about:blank" and current_url != "data:,":
-            return f"Navigation to {url} started but timed out after {navigation_timeout} seconds. You can use selenium_check_page_ready tool to check if the page is loaded. Current URL: {current_url}"
+            return f"Navigation to {url} started but timed out after {navigation_timeout} seconds. You can use check_page_ready tool to check if the page is loaded. Current URL: {current_url}"
         else:
-            return f"Navigation to {url} timed out after {navigation_timeout} seconds, but may continue loading. You can use selenium_check_page_ready tool to check if the page is loaded. Current URL: {current_url}"
+            return f"Navigation to {url} timed out after {navigation_timeout} seconds, but may continue loading. You can use check_page_ready tool to check if the page is loaded. Current URL: {current_url}"
     except Exception as e:
         elapsed = time.time() - start_time
         error_msg = str(e)
@@ -585,8 +597,16 @@ def selenium_navigate(url: str, timeout: int = 60) -> str:
         raise Exception(f"Error navigating to {url}: {error_msg}")
 
 @mcp.tool()
-def selenium_take_screenshot() -> str:
-    """Take a screenshot of the current page"""
+def take_screenshot() -> str:
+    """Take a screenshot of the current browser window.
+    
+    This tool captures the current visible area of the browser window and saves it
+    as a PNG file in the ~/selenium-mcp/screenshot directory. The filename will include
+    a timestamp for uniqueness.
+    
+    Returns:
+        The path to the saved screenshot file.
+    """
     global driver
     if driver is None:
         logger.info("WebDriver is not initialized, initializing now...")
@@ -611,8 +631,19 @@ def selenium_take_screenshot() -> str:
     return f"Screenshot saved to {screenshot_path}"
 
 @mcp.tool()
-def selenium_check_page_ready(wait_seconds: int = 0) -> str:
-    """Check the document.readyState of the current page"""
+def check_page_ready(wait_seconds: int = 0) -> str:
+    """Check if the current page is fully loaded.
+    
+    This tool checks the document.readyState of the current page to determine if it has
+    finished loading. It can optionally wait a specified number of seconds before checking.
+    
+    Args:
+        wait_seconds: Number of seconds to wait before checking the page's ready state.
+            Default is 0 (check immediately).
+    
+    Returns:
+        A message indicating the current ready state of the page (complete, interactive, or loading).
+    """
     global driver
     if driver is None:
         logger.info("WebDriver is not initialized, initializing now...")
@@ -648,8 +679,15 @@ def selenium_check_page_ready(wait_seconds: int = 0) -> str:
         raise Exception(f"Error checking page ready state: {str(e)}")
 
 @mcp.tool()
-def selenium_get_console_logs() -> str:
-    """Get console logs from browser"""
+def get_console_logs() -> str:
+    """Retrieve all console logs from the browser.
+    
+    This tool collects all console logs (info, warnings, errors) that have been output
+    in the browser's JavaScript console since the page was loaded.
+    
+    Returns:
+        A JSON string containing all console log entries, including their type and message.
+    """
     global driver
     if driver is None:
         logger.info("WebDriver is not initialized, initializing now...")
@@ -661,14 +699,6 @@ def selenium_get_console_logs() -> str:
             return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
-        # Force some console messages for testing
-        # driver.execute_script("""
-        #     console.log('Test log message');
-        #     console.info('Test info message');
-        #     console.warn('Test warning message');
-        #     console.error('Test error message');
-        # """)
-        
         # Get browser logs
         logs = get_browser_logs(driver)
         
@@ -678,8 +708,15 @@ def selenium_get_console_logs() -> str:
         return f"Error getting console logs: {str(e)}"
 
 @mcp.tool()
-def selenium_get_console_errors() -> str:
-    """Get console errors from browser"""
+def get_console_errors() -> str:
+    """Retrieve only error messages from the browser console.
+    
+    This tool collects only SEVERE and ERROR level messages that have been output
+    in the browser's JavaScript console, filtering out informational and warning messages.
+    
+    Returns:
+        A JSON string containing only console error messages.
+    """
     global driver
     if driver is None:
         logger.info("WebDriver is not initialized, initializing now...")
@@ -691,14 +728,6 @@ def selenium_get_console_errors() -> str:
             return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
-        # Force some console messages for testing
-        # driver.execute_script("""
-        #     console.log('Test log message');
-        #     console.info('Test info message');
-        #     console.warn('Test warning message');
-        #     console.error('Test error message');
-        # """)
-
         # Get all logs
         all_logs = get_browser_logs(driver)
         
@@ -711,8 +740,20 @@ def selenium_get_console_errors() -> str:
         return f"Error getting console errors: {str(e)}"
 
 @mcp.tool()
-def selenium_get_network_logs(filter_url_by_text: str = '') -> str:
-    """Get network logs from browser performance data"""
+def get_network_logs(filter_url_by_text: str = '') -> str:
+    """Retrieve network request logs from the browser.
+    
+    This tool collects all network activity (requests and responses) that has occurred
+    since the page was loaded. Results can optionally be filtered by domain.
+    
+    Args:
+        filter_url_by_text: Text to filter domain names by. When specified, only network
+            requests to domains containing this text will be included. Default is empty
+            string (no filtering).
+    
+    Returns:
+        A JSON string containing the network request logs, grouped by request ID.
+    """
     global driver
     if driver is None:
         logger.info("WebDriver is not initialized, initializing now...")
@@ -734,8 +775,20 @@ def selenium_get_network_logs(filter_url_by_text: str = '') -> str:
         return f"Error getting network logs: {str(e)}"
 
 @mcp.tool()
-def selenium_get_network_errors(filter_url_by_text: str = '') -> str:
-    """Get network errors from browser performance data"""
+def get_network_errors(filter_url_by_text: str = '') -> str:
+    """Retrieve only failed network requests from the browser.
+    
+    This tool collects network activity with error status codes (4xx/5xx) or other
+    network failures. Results can optionally be filtered by domain.
+    
+    Args:
+        filter_url_by_text: Text to filter domain names by. When specified, only network
+            errors from domains containing this text will be included. Default is empty
+            string (no filtering).
+    
+    Returns:
+        A JSON string containing only failed network requests, grouped by request ID.
+    """
     global driver
     if driver is None:
         logger.info("WebDriver is not initialized, initializing now...")
