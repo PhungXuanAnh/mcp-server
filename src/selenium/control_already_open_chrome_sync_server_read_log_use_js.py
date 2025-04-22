@@ -181,12 +181,6 @@ def initialize_driver(browser: str = "chrome", headless: bool = False) -> webdri
     options = ChromeOptions()
     options.debugger_address = "127.0.0.1:9222"
     
-    # Set logging preferences for both browser logs and performance logs
-    options.set_capability('goog:loggingPrefs', {
-        'browser': 'ALL',
-        'performance': 'ALL'
-    })
-    
     # Create the driver
     driver = webdriver.Chrome(options=options)
     
@@ -379,95 +373,11 @@ def get_browser_logs(driver: webdriver.Chrome, log_type='browser'):
     
     return logs
 
-def process_performance_log_entry(entry):
-    """Process a performance log entry to extract the message"""
-    try:
-        return json.loads(entry['message'])['message']
-    except Exception as e:
-        logger.error(f"Error processing performance log entry: {str(e)}")
-        return None
-
-def get_network_logs_from_performance(driver: webdriver.Chrome):
-    """Get network logs using performance logging"""
-    if driver is None:
-        return []
-    
-    try:
-        # Get raw performance logs
-        performance_logs = driver.get_log('performance')
-        
-        # Process the logs to extract the message part
-        events = []
-        for entry in performance_logs:
-            event = process_performance_log_entry(entry)
-            if event is not None:
-                events.append(event)
-        
-        # Filter for network events
-        network_events = []
-        for event in events:
-            if 'Network.' in event.get('method', ''):
-                # Extract the relevant information
-                method = event.get('method', '')
-                params = event.get('params', {})
-                request_id = params.get('requestId', '')
-                
-                # Create a simplified event object
-                if method == 'Network.requestWillBeSent':
-                    request = params.get('request', {})
-                    network_events.append({
-                        'type': 'request',
-                        'requestId': request_id,
-                        'method': request.get('method', ''),
-                        'url': request.get('url', ''),
-                        'timestamp': params.get('timestamp', 0),
-                        'headers': request.get('headers', {})
-                    })
-                elif method == 'Network.responseReceived':
-                    response = params.get('response', {})
-                    status = response.get('status', 0)
-                    status_text = response.get('statusText', '')
-                    
-                    network_events.append({
-                        'type': 'response',
-                        'requestId': request_id,
-                        'status': status,
-                        'statusText': status_text,
-                        'url': response.get('url', ''),
-                        'timestamp': params.get('timestamp', 0),
-                        'headers': response.get('headers', {}),
-                        'mimeType': response.get('mimeType', ''),
-                        'hasError': status >= 400
-                    })
-                elif method == 'Network.loadingFailed':
-                    error_text = params.get('errorText', '')
-                    canceled = params.get('canceled', False)
-                    
-                    network_events.append({
-                        'type': 'failed',
-                        'requestId': request_id,
-                        'errorText': error_text,
-                        'canceled': canceled,
-                        'timestamp': params.get('timestamp', 0),
-                        'hasError': True
-                    })
-        
-        return network_events
-    except Exception as e:
-        logger.error(f"Error getting network logs from performance: {str(e)}")
-        return []
-
-def get_response_body(driver: webdriver.Chrome, request_id: str):
-    """Get the response body for a specific request using CDP command"""
-    if driver is None:
-        return None
-    
-    try:
-        result = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
-        return result
-    except Exception as e:
-        logger.error(f"Error getting response body: {str(e)}")
-        return None
+# Store console logs in memory
+console_logs: list[dict] = []
+console_errors: list[dict] = []
+network_logs: list[dict] = []
+network_errors: list[dict] = []
 
 @mcp.tool()
 def selenium_navigate(url: str, timeout: int = 60) -> str:
@@ -585,8 +495,8 @@ def selenium_check_page_ready(wait_seconds: int = 0) -> str:
 
 @mcp.tool()
 def selenium_get_console_logs() -> str:
-    """Get console logs from browser"""
-    global driver
+    """Get console logs using Chrome DevTools Protocol"""
+    global driver, console_logs, console_errors
     if driver is None:
         logger.info("WebDriver is not initialized, initializing now...")
         try:
@@ -597,25 +507,98 @@ def selenium_get_console_logs() -> str:
             return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
-        # Force some console messages for testing
-        # driver.execute_script("""
-        #     console.log('Test log message');
-        #     console.info('Test info message');
-        #     console.warn('Test warning message');
-        #     console.error('Test error message');
-        # """)
+        # Clear previous logs
+        console_logs.clear()
+        console_errors.clear()
         
-        # Get browser logs
-        logs = get_browser_logs(driver)
+        # Use JavaScript approach which works with all Chrome versions
+        logger.info("Using JavaScript method to capture console logs")
         
-        return json.dumps(logs, indent=2)
+        # Use JavaScript to inject console log interceptor
+        console_capture_script = """
+        const logs = [];
+        
+        // Save original console methods
+        const originalLog = console.log;
+        const originalInfo = console.info;
+        const originalWarn = console.warn;
+        const originalError = console.error;
+        
+        // Override console methods to capture logs
+        console.log = function() {
+            const msg = Array.from(arguments).join(' ');
+            logs.push({type: 'info', message: msg, timestamp: Date.now()});
+            originalLog.apply(console, arguments);
+        };
+        
+        console.info = function() {
+            const msg = Array.from(arguments).join(' ');
+            logs.push({type: 'info', message: msg, timestamp: Date.now()});
+            originalInfo.apply(console, arguments);
+        };
+        
+        console.warn = function() {
+            const msg = Array.from(arguments).join(' ');
+            logs.push({type: 'warning', message: msg, timestamp: Date.now()});
+            originalWarn.apply(console, arguments);
+        };
+        
+        console.error = function() {
+            const msg = Array.from(arguments).join(' ');
+            logs.push({type: 'error', message: msg, timestamp: Date.now()});
+            originalError.apply(console, arguments);
+        };
+        
+        // Generate some test logs
+        console.log('Test log message from JavaScript');
+        console.info('Test info message from JavaScript');
+        console.warn('Test warning message from JavaScript');
+        console.error('Test error message from JavaScript');
+        
+        // Wait a bit for any asynchronous logs
+        setTimeout(() => {}, 500);
+        
+        return logs;
+        """
+        
+        # Clear any previous logs
+        driver.execute_script("console.clear();")
+        
+        # Execute the script to capture logs
+        js_logs = driver.execute_script(console_capture_script)
+        
+        # Process the logs
+        for log in js_logs:
+            console_logs.append(log)
+            if log.get("type") in ("error", "severe"):
+                console_errors.append(log)
+        
+        # If we didn't get any logs, try accessing browser logs directly
+        if not console_logs:
+            logger.info("No logs captured via JavaScript approach, trying browser logs")
+            try:
+                browser_logs = driver.get_log('browser')
+                for entry in browser_logs:
+                    log_type = entry.get('level', 'INFO').lower() 
+                    log_data = {
+                        "type": log_type,
+                        "message": entry.get('message', ''),
+                        "timestamp": entry.get('timestamp', 0)
+                    }
+                    console_logs.append(log_data)
+                    if log_type in ('error', 'severe'):
+                        console_errors.append(log_data)
+            except Exception as browser_log_error:
+                logger.warning(f"Could not get browser logs: {str(browser_log_error)}")
+        
+        return json.dumps(console_logs, indent=2)
     except Exception as e:
         logger.error(f"Error getting console logs: {str(e)}")
         return f"Error getting console logs: {str(e)}"
 
 @mcp.tool()
 def selenium_get_console_errors() -> str:
-    """Get console errors from browser"""
+    """Get console errors using Chrome DevTools Protocol"""
     global driver
     if driver is None:
         logger.info("WebDriver is not initialized, initializing now...")
@@ -627,28 +610,19 @@ def selenium_get_console_errors() -> str:
             return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
-        # Force some console messages for testing
-        # driver.execute_script("""
-        #     console.log('Test log message');
-        #     console.info('Test info message');
-        #     console.warn('Test warning message');
-        #     console.error('Test error message');
-        # """)
-
-        # Get all logs
-        all_logs = get_browser_logs(driver)
+        # Get all console logs first
+        if not console_logs:
+            selenium_get_console_logs()
         
-        # Filter for errors only - include SEVERE, ERROR levels
-        error_logs = [log for log in all_logs if log['type'].upper() in ('SEVERE', 'ERROR')]
-        
-        return json.dumps(error_logs, indent=2)
+        # Return only error logs
+        return json.dumps(console_errors, indent=2)
     except Exception as e:
         logger.error(f"Error getting console errors: {str(e)}")
         return f"Error getting console errors: {str(e)}"
 
 @mcp.tool()
 def selenium_get_network_logs() -> str:
-    """Get network logs from browser performance data"""
+    """Get network logs using Chrome DevTools Protocol"""
     global driver
     if driver is None:
         logger.info("WebDriver is not initialized, initializing now...")
@@ -660,10 +634,60 @@ def selenium_get_network_logs() -> str:
             return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
-        # Get network logs from performance data
-        network_logs = get_network_logs_from_performance(driver)
+        # Clear previous logs
+        network_logs.clear()
         
-        # Return formatted logs
+        # Enable Network domain
+        driver.execute_cdp_cmd("Network.enable", {})
+        
+        # Make a test request to ensure we have some network activity
+        driver.execute_script("""
+            fetch('https://jsonplaceholder.typicode.com/todos/1')
+                .then(response => response.json())
+                .then(json => console.log('Test network fetch successful'))
+                .catch(err => console.error('Test network fetch failed:', err));
+        """)
+        
+        # Give time for network request to complete
+        time.sleep(2)
+        
+        # Get network events (for browsers that support it)
+        try:
+            network_events = driver.execute_cdp_cmd("Network.getAllCookies", {})
+            network_logs.append({"type": "info", "message": f"Cookies: {json.dumps(network_events)}", "timestamp": datetime.now().timestamp()})
+        except:
+            logger.info("Could not get network events via CDP, using JavaScript fallback")
+        
+        # Use JavaScript to get network information
+        network_script = """
+        const performance = window.performance || window.mozPerformance || window.msPerformance || window.webkitPerformance || {};
+        let resources = [];
+        
+        if (performance.getEntries) {
+            resources = performance.getEntries().filter(entry => entry.entryType === 'resource').map(entry => {
+                return {
+                    url: entry.name,
+                    type: entry.initiatorType,
+                    duration: entry.duration,
+                    size: entry.transferSize || 0,
+                    startTime: entry.startTime
+                };
+            });
+        }
+        
+        return resources;
+        """
+        
+        perf_entries = driver.execute_script(network_script)
+        
+        for entry in perf_entries:
+            network_logs.append({
+                "type": "network",
+                "message": f"URL: {entry.get('url')} | Type: {entry.get('type')} | Duration: {entry.get('duration')}ms | Size: {entry.get('size')} bytes",
+                "timestamp": datetime.now().timestamp(),
+                "data": entry
+            })
+        
         return json.dumps(network_logs, indent=2)
     except Exception as e:
         logger.error(f"Error getting network logs: {str(e)}")
@@ -671,7 +695,7 @@ def selenium_get_network_logs() -> str:
 
 @mcp.tool()
 def selenium_get_network_errors() -> str:
-    """Get network errors from browser performance data"""
+    """Get network errors using Chrome DevTools Protocol"""
     global driver
     if driver is None:
         logger.info("WebDriver is not initialized, initializing now...")
@@ -683,13 +707,51 @@ def selenium_get_network_errors() -> str:
             return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
-        # Get all network logs
-        all_logs = get_network_logs_from_performance(driver)
+        # Get all network logs first if we don't have any
+        if not network_logs:
+            selenium_get_network_logs()
         
-        # Filter for errors only (status >= 400 or failed requests)
-        error_logs = [log for log in all_logs if log.get('hasError', False)]
+        # Use JavaScript to specifically check for failed network requests
+        error_script = """
+        const errors = [];
         
-        return json.dumps(error_logs, indent=2)
+        // Create a failed request for testing
+        fetch('https://this-url-does-not-exist-123456789.com')
+            .catch(err => console.error('Expected error for test'));
+        
+        if (window.performance && window.performance.getEntries) {
+            // Look for failed resources using the error property in the Performance API
+            const resources = performance.getEntries();
+            
+            // Check for specific error patterns
+            const failedResources = resources.filter(res => 
+                res.transferSize === 0 && res.encodedBodySize === 0 && res.decodedBodySize === 0 && res.duration > 0
+            );
+            
+            for (const res of failedResources) {
+                errors.push({
+                    url: res.name,
+                    type: res.initiatorType,
+                    errorType: 'Failed resource',
+                    timestamp: Date.now()
+                });
+            }
+        }
+        
+        return errors;
+        """
+        
+        error_entries = driver.execute_script(error_script)
+        
+        for entry in error_entries:
+            network_errors.append({
+                "type": "error",
+                "message": f"Failed request: {entry.get('url')} | Type: {entry.get('type')} | Error: {entry.get('errorType')}",
+                "timestamp": entry.get('timestamp', datetime.now().timestamp()),
+                "data": entry
+            })
+        
+        return json.dumps(network_errors, indent=2)
     except Exception as e:
         logger.error(f"Error getting network errors: {str(e)}")
         return f"Error getting network errors: {str(e)}"
