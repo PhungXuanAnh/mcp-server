@@ -524,8 +524,35 @@ def selenium_navigate(url: str, timeout: int = 60) -> str:
             return f"Navigation to {url} timed out after {navigation_timeout} seconds, but may continue loading. You can use selenium_check_page_ready tool to check if the page is loaded. Current URL: {current_url}"
     except Exception as e:
         elapsed = time.time() - start_time
-        logger.error(f"Error after {elapsed:.2f} seconds while navigating to {url}: {str(e)}")
-        raise Exception(f"Error navigating to {url}: {str(e)}")
+        error_msg = str(e)
+        logger.error(f"Error after {elapsed:.2f} seconds while navigating to {url}: {error_msg}")
+        
+        # Check if the error is due to the browser being closed
+        if "invalid session id" in error_msg and "browser has closed" in error_msg:
+            logger.info("Detected that Chrome has been closed. Attempting to restart Chrome...")
+            
+            # Attempt to restart Chrome
+            if start_chrome():
+                logger.info("Successfully restarted Chrome")
+                
+                # Reinitialize the driver
+                try:
+                    driver = initialize_driver()
+                    logger.info("WebDriver reinitialized successfully")
+                    
+                    # Try to navigate again
+                    try:
+                        driver.get(url)
+                        return f"Chrome was restarted and navigation to {url} initiated"
+                    except Exception as nav_e:
+                        return f"Chrome was restarted but navigation failed: {str(nav_e)}"
+                except Exception as init_e:
+                    return f"Chrome was restarted but failed to reinitialize WebDriver: {str(init_e)}"
+            else:
+                return f"Failed to restart Chrome after it was closed"
+        
+        # For other errors, just raise the exception
+        raise Exception(f"Error navigating to {url}: {error_msg}")
 
 @mcp.tool()
 def selenium_take_screenshot() -> str:
