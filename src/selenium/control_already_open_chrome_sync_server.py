@@ -111,7 +111,9 @@ def start_chrome(port: int = 9222) -> bool:
             f"--remote-debugging-port={port}",
             f"--user-data-dir={user_data_dir}",
             "--no-first-run",
-            "--no-default-browser-check"
+            "--no-default-browser-check",
+            "--start-maximized",  # Start Chrome maximized
+            "--auto-open-devtools-for-tabs"  # Auto-open DevTools for new tabs
         ]
         
         process = subprocess.Popen(
@@ -159,7 +161,9 @@ def initialize_driver(browser: str = "chrome", headless: bool = False) -> webdri
             f"--user-data-dir={user_data_dir}",
             "--no-first-run",
             "--no-default-browser-check",
-            "--enable-logging"  # Enable logging
+            "--enable-logging",  # Enable logging
+            "--start-maximized",  # Start Chrome maximized
+            "--auto-open-devtools-for-tabs"  # Auto-open DevTools for new tabs
         ]
         
         process = subprocess.Popen(
@@ -189,6 +193,9 @@ def initialize_driver(browser: str = "chrome", headless: bool = False) -> webdri
     
     # Create the driver
     driver = webdriver.Chrome(options=options)
+    
+    # Maximize the window
+    driver.maximize_window()
     
     # Set longer page load timeout
     driver.set_page_load_timeout(120)
