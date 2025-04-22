@@ -459,7 +459,18 @@ def get_network_logs_from_performance(driver: webdriver.Chrome):
                         'hasError': True
                     })
         
-        return network_events
+        # Group network events by requestId
+        grouped_events = {}
+        for event in network_events:
+            request_id = event.get('requestId', '')
+            if request_id not in grouped_events:
+                grouped_events[request_id] = []
+            grouped_events[request_id].append(event)
+        
+        # Convert dictionary to list of lists
+        result = list(grouped_events.values())
+        
+        return result
     except Exception as e:
         logger.error(f"Error getting network logs from performance: {str(e)}")
         return []
