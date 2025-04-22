@@ -9,6 +9,7 @@ from enum import Enum
 from logging.config import dictConfig
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
+from urllib.parse import urlparse
 
 # Third-party imports
 import click
@@ -80,10 +81,11 @@ class GetConsoleErrors(BaseModel):
     pass
 
 class GetNetworkLogs(BaseModel):
-    pass
+     filter_url_by_text: str = Field(default='', description="Optional string to filter the network logs by url")
+    
 
 class GetNetworkErrors(BaseModel):
-    pass
+    filter_url_by_text: str = Field(default='', description="Optional string to filter the network logs by url")
 
 def check_chrome_debugger_port(port: int = 9222) -> bool:
     """Check if Chrome is running with remote debugging port open"""
@@ -394,7 +396,7 @@ def process_performance_log_entry(entry):
         logger.error(f"Error processing performance log entry: {str(e)}")
         return None
 
-def get_network_logs_from_performance(driver: webdriver.Chrome):
+def get_network_logs_from_performance(driver: webdriver.Chrome, filter_url_by_text: str = ''):
     """Get network logs using performance logging"""
     if driver is None:
         return []
@@ -460,12 +462,29 @@ def get_network_logs_from_performance(driver: webdriver.Chrome):
                     })
         
         # Group network events by requestId
-        grouped_events = {}
+        grouped_events: Dict[str, List[Dict[str, Any]]] = {}
         for event in network_events:
             request_id = event.get('requestId', '')
             if request_id not in grouped_events:
                 grouped_events[request_id] = []
             grouped_events[request_id].append(event)
+        
+        # Filter by URL domain text if specified
+        if filter_url_by_text:
+            logger.info(f"Filtering network logs by domain containing: {filter_url_by_text}")
+            filtered_events = {}
+            for request_id, events_list in grouped_events.items():
+                # Check if any event in this group has a URL domain containing the filter text
+                for event in events_list:
+                    if 'url' in event:
+                        try:
+                            domain = urlparse(event['url']).netloc
+                            if filter_url_by_text in domain:
+                                filtered_events[request_id] = events_list
+                                break
+                        except Exception as e:
+                            logger.error(f"Error parsing URL domain: {str(e)}")
+            grouped_events = filtered_events
         
         # Convert dictionary to list of lists
         result = list(grouped_events.values())
@@ -692,7 +711,7 @@ def selenium_get_console_errors() -> str:
         return f"Error getting console errors: {str(e)}"
 
 @mcp.tool()
-def selenium_get_network_logs() -> str:
+def selenium_get_network_logs(filter_url_by_text: str = '') -> str:
     """Get network logs from browser performance data"""
     global driver
     if driver is None:
@@ -706,7 +725,7 @@ def selenium_get_network_logs() -> str:
     
     try:
         # Get network logs from performance data
-        network_logs = get_network_logs_from_performance(driver)
+        network_logs = get_network_logs_from_performance(driver, filter_url_by_text)
         
         # Return formatted logs
         return json.dumps(network_logs, indent=2)
@@ -715,7 +734,7 @@ def selenium_get_network_logs() -> str:
         return f"Error getting network logs: {str(e)}"
 
 @mcp.tool()
-def selenium_get_network_errors() -> str:
+def selenium_get_network_errors(filter_url_by_text: str = '') -> str:
     """Get network errors from browser performance data"""
     global driver
     if driver is None:
@@ -729,10 +748,15 @@ def selenium_get_network_errors() -> str:
     
     try:
         # Get all network logs
-        all_logs = get_network_logs_from_performance(driver)
+        all_logs = get_network_logs_from_performance(driver, filter_url_by_text)
         
         # Filter for errors only (status >= 400 or failed requests)
-        error_logs = [log for log in all_logs if log.get('hasError', False)]
+        error_logs = []
+        for request_events in all_logs:
+            # Check if any event in this request group has an error
+            has_error = any(event.get('hasError', False) for event in request_events)
+            if has_error:
+                error_logs.append(request_events)
         
         return json.dumps(error_logs, indent=2)
     except Exception as e:
