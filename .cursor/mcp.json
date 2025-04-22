@@ -3,7 +3,7 @@
         "selenium": {
             "command": "/home/xuananh/repo/mcp-server/.venv/bin/python",
             "args": [
-                "/home/xuananh/repo/mcp-server/src/selenium/control_already_open_chrome.py"
+                "/home/xuananh/repo/mcp-server/src/selenium/control_already_open_chrome_sync_server.py"
             ]
         },
         "git1": {
