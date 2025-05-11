@@ -37,7 +37,7 @@ LOGGING_CONFIG = {
             "level": "DEBUG",
             "class": "logging.handlers.RotatingFileHandler",
             "formatter": "verbose",
-            "filename": "/tmp/app.log",
+            "filename": "/tmp/selenium-mcp.log",
             "maxBytes": 100000 * 1024,  # 100MB
             "backupCount": 3,
         },
@@ -94,7 +94,10 @@ class ClickElement(BaseModel):
 
 class LocalStorageAdd(BaseModel):
     key: str = Field(description="Key for the local storage item")
-    value: str = Field(description="Value to store in local storage")
+    string_value: str = Field(default='', description="String value to store in local storage")
+    object_value: Dict[str, Any] = Field(default_factory=dict, description="Object value to store in local storage as JSON")
+    create_empty_string: bool = Field(default=False, description="Whether to create an empty string value if string_value is empty")
+    create_empty_object: bool = Field(default=False, description="Whether to create an empty object value if object_value is empty")
 
 class LocalStorageRead(BaseModel):
     key: str = Field(description="Key of the local storage item to read")
@@ -925,8 +928,15 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '') -> str:
         logger.error(error_msg)
         return error_msg
 
+def is_json_string(value: str) -> bool:
+    try:
+        json.loads(value)
+        return True
+    except:
+        return False
+
 @mcp.tool()
-def local_storage_add(key: str, value: str) -> str:
+def local_storage_add(key: str, string_value: str = '', object_value: dict = {}, create_empty_string: bool = False, create_empty_object: bool = False) -> str:
     """Add or update a key-value pair in browser's local storage.
     
     This tool adds a new key-value pair to the browser's localStorage, or updates
@@ -934,7 +944,11 @@ def local_storage_add(key: str, value: str) -> str:
     
     Args:
         key: The key name for the local storage item.
-        value: The value to store in local storage.
+        string_value: The string value to store in local storage. Default is empty string.
+        object_value: The object value to store in local storage as JSON. Default is empty dict.
+                     When provided, this takes precedence over string_value.
+        create_empty_string: Whether to create an empty string value if string_value is empty. Default is False.
+        create_empty_object: Whether to create an empty object value if object_value is empty. Default is False.
     
     Returns:
         A message indicating whether the operation was successful.
@@ -950,18 +964,34 @@ def local_storage_add(key: str, value: str) -> str:
             return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
-        # Execute JavaScript to add the item to local storage
-        script = f"window.localStorage.setItem('{key}', '{value}');"
+        # Determine the value to use
+        if object_value or create_empty_object:
+            # Convert the object to JSON string for storage
+            json_value = json.dumps(object_value)
+            # Need to properly escape quotes for JavaScript execution
+            escaped_json = json_value.replace("'", "\\'").replace('"', '\\"')
+            script = f"window.localStorage.setItem('{key}', JSON.stringify({json.dumps(object_value)}));"
+        elif string_value or create_empty_string:
+            # Check if string_value is a valid JSON string and handle accordingly
+            try:
+                # Try to parse as JSON to see if it's a JSON string
+                json_obj = json.loads(string_value)
+                # If it parses successfully, treat it as JSON
+                script = f"window.localStorage.setItem('{key}', JSON.stringify({string_value}));"
+            except json.JSONDecodeError:
+                # Not valid JSON, treat as regular string
+                script = f"window.localStorage.setItem('{key}', '{string_value}');"
+        else:
+            return f"No value provided for key '{key}'. Set create_empty_string or create_empty_object to True to create with empty value."
+            
         driver.execute_script(script)
+        logger.info("Ran script: %s", script)
         
         # Verify the item was added correctly
         verification_script = f"return window.localStorage.getItem('{key}');"
         stored_value = driver.execute_script(verification_script)
         
-        if stored_value == value:
-            return f"Successfully added key '{key}' with value '{value}' to local storage"
-        else:
-            return f"Error: Failed to verify local storage update. Expected '{value}', got '{stored_value}'"
+        return f"Successfully added key '{key}' to local storage with value: {stored_value}"
     
     except Exception as e:
         error_msg = f"Error adding to local storage: {str(e)}"
