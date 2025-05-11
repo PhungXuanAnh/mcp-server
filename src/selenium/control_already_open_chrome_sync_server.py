@@ -92,6 +92,22 @@ class ClickElement(BaseModel):
     class_name: Optional[str] = Field(default=None, description="Class name of the element to click")
     id: Optional[str] = Field(default=None, description="ID of the element to click")
 
+class LocalStorageAdd(BaseModel):
+    key: str = Field(description="Key for the local storage item")
+    value: str = Field(description="Value to store in local storage")
+
+class LocalStorageRead(BaseModel):
+    key: str = Field(description="Key of the local storage item to read")
+
+class LocalStorageRemove(BaseModel):
+    key: str = Field(description="Key of the local storage item to remove")
+
+class LocalStorageReadAll(BaseModel):
+    pass
+
+class LocalStorageRemoveAll(BaseModel):
+    pass
+
 def check_chrome_debugger_port(port: int = 9222) -> bool:
     """Check if Chrome is running with remote debugging port open"""
     try:
@@ -906,6 +922,221 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '') -> str:
     
     except Exception as e:
         error_msg = f"Error clicking element: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
+
+@mcp.tool()
+def local_storage_add(key: str, value: str) -> str:
+    """Add or update a key-value pair in browser's local storage.
+    
+    This tool adds a new key-value pair to the browser's localStorage, or updates
+    the value if the key already exists.
+    
+    Args:
+        key: The key name for the local storage item.
+        value: The value to store in local storage.
+    
+    Returns:
+        A message indicating whether the operation was successful.
+    """
+    global driver
+    if driver is None:
+        logger.info("WebDriver is not initialized, initializing now...")
+        try:
+            driver = initialize_driver()
+            logger.info("WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize WebDriver: {str(e)}")
+            return f"Failed to initialize WebDriver: {str(e)}"
+    
+    try:
+        # Execute JavaScript to add the item to local storage
+        script = f"window.localStorage.setItem('{key}', '{value}');"
+        driver.execute_script(script)
+        
+        # Verify the item was added correctly
+        verification_script = f"return window.localStorage.getItem('{key}');"
+        stored_value = driver.execute_script(verification_script)
+        
+        if stored_value == value:
+            return f"Successfully added key '{key}' with value '{value}' to local storage"
+        else:
+            return f"Error: Failed to verify local storage update. Expected '{value}', got '{stored_value}'"
+    
+    except Exception as e:
+        error_msg = f"Error adding to local storage: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
+
+@mcp.tool()
+def local_storage_read(key: str) -> str:
+    """Read a value from browser's local storage by key.
+    
+    This tool retrieves the value associated with the specified key from the browser's
+    localStorage. If the key doesn't exist, it returns a message indicating the key was not found.
+    
+    Args:
+        key: The key name of the local storage item to read.
+    
+    Returns:
+        The value associated with the key, or a message if the key doesn't exist.
+    """
+    global driver
+    if driver is None:
+        logger.info("WebDriver is not initialized, initializing now...")
+        try:
+            driver = initialize_driver()
+            logger.info("WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize WebDriver: {str(e)}")
+            return f"Failed to initialize WebDriver: {str(e)}"
+    
+    try:
+        # Execute JavaScript to get the value from local storage
+        script = f"return window.localStorage.getItem('{key}');"
+        value = driver.execute_script(script)
+        
+        if value is None:
+            return f"Key '{key}' not found in local storage"
+        else:
+            return f"Value for key '{key}': {value}"
+    
+    except Exception as e:
+        error_msg = f"Error reading from local storage: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
+
+@mcp.tool()
+def local_storage_remove(key: str) -> str:
+    """Remove a key-value pair from browser's local storage.
+    
+    This tool removes the specified key and its associated value from the browser's
+    localStorage. If the key doesn't exist, it returns a message indicating the key was not found.
+    
+    Args:
+        key: The key name of the local storage item to remove.
+    
+    Returns:
+        A message indicating whether the operation was successful.
+    """
+    global driver
+    if driver is None:
+        logger.info("WebDriver is not initialized, initializing now...")
+        try:
+            driver = initialize_driver()
+            logger.info("WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize WebDriver: {str(e)}")
+            return f"Failed to initialize WebDriver: {str(e)}"
+    
+    try:
+        # First check if the key exists
+        check_script = f"return window.localStorage.getItem('{key}') !== null;"
+        key_exists = driver.execute_script(check_script)
+        
+        if not key_exists:
+            return f"Key '{key}' not found in local storage, nothing to remove"
+        
+        # Execute JavaScript to remove the item from local storage
+        script = f"window.localStorage.removeItem('{key}');"
+        driver.execute_script(script)
+        
+        # Verify the item was removed
+        verification_script = f"return window.localStorage.getItem('{key}') === null;"
+        was_removed = driver.execute_script(verification_script)
+        
+        if was_removed:
+            return f"Successfully removed key '{key}' from local storage"
+        else:
+            return f"Error: Failed to remove key '{key}' from local storage"
+    
+    except Exception as e:
+        error_msg = f"Error removing from local storage: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
+
+@mcp.tool()
+def local_storage_read_all() -> str:
+    """Read all key-value pairs from browser's local storage.
+    
+    This tool retrieves all items from the browser's localStorage and returns
+    them as a dictionary. If localStorage is empty, it returns a message indicating
+    that no items were found.
+    
+    Returns:
+        A JSON string containing all localStorage items, or a message if localStorage is empty.
+    """
+    global driver
+    if driver is None:
+        logger.info("WebDriver is not initialized, initializing now...")
+        try:
+            driver = initialize_driver()
+            logger.info("WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize WebDriver: {str(e)}")
+            return f"Failed to initialize WebDriver: {str(e)}"
+    
+    try:
+        # Execute JavaScript to get all items from local storage
+        script = """
+        const items = {};
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            items[key] = localStorage.getItem(key);
+        }
+        return items;
+        """
+        items = driver.execute_script(script)
+        
+        if not items:
+            return "No items found in local storage"
+        else:
+            return json.dumps(items, indent=2)
+    
+    except Exception as e:
+        error_msg = f"Error reading all items from local storage: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
+
+@mcp.tool()
+def local_storage_remove_all() -> str:
+    """Remove all key-value pairs from browser's local storage.
+    
+    This tool clears all items from the browser's localStorage. If localStorage
+    is already empty, it returns a message indicating that there was nothing to remove.
+    
+    Returns:
+        A message indicating whether the operation was successful.
+    """
+    global driver
+    if driver is None:
+        logger.info("WebDriver is not initialized, initializing now...")
+        try:
+            driver = initialize_driver()
+            logger.info("WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize WebDriver: {str(e)}")
+            return f"Failed to initialize WebDriver: {str(e)}"
+    
+    try:
+        # First check if there are any items in localStorage
+        count_script = "return localStorage.length;"
+        item_count = driver.execute_script(count_script)
+        
+        if item_count == 0:
+            return "Local storage is already empty, nothing to remove"
+        
+        # Execute JavaScript to clear all items from local storage
+        script = "localStorage.clear(); return localStorage.length === 0;"
+        success = driver.execute_script(script)
+        
+        if success:
+            return f"Successfully removed all {item_count} item(s) from local storage"
+        else:
+            return "Error: Failed to clear local storage"
+    
+    except Exception as e:
+        error_msg = f"Error removing all items from local storage: {str(e)}"
         logger.error(error_msg)
         return error_msg
 
