@@ -87,6 +87,11 @@ class GetNetworkLogs(BaseModel):
 class GetNetworkErrors(BaseModel):
     filter_url_by_text: str = Field(default='', description="Optional string to filter the network logs by url")
 
+class ClickElement(BaseModel):
+    text: Optional[str] = Field(default=None, description="Text content of the element to click")
+    class_name: Optional[str] = Field(default=None, description="Class name of the element to click")
+    id: Optional[str] = Field(default=None, description="ID of the element to click")
+
 def check_chrome_debugger_port(port: int = 9222) -> bool:
     """Check if Chrome is running with remote debugging port open"""
     try:
@@ -815,6 +820,94 @@ def get_network_errors(filter_url_by_text: str = '') -> str:
     except Exception as e:
         logger.error(f"Error getting network errors: {str(e)}")
         return f"Error getting network errors: {str(e)}"
+
+@mcp.tool()
+def click_to_element(text: str = '', class_name: str = '', id: str = '') -> str:
+    """Click on an element identified by text content, class name, or ID.
+    
+    This tool finds and clicks on an element based on specified criteria. At least one 
+    of text, class_name, or id must be provided. If multiple elements match the criteria, 
+    or if no elements are found, an error message is returned.
+    
+    Args:
+        text: Text content of the element to click. Case-sensitive text matching.
+        class_name: CSS class name of the element to click.
+        id: ID attribute of the element to click.
+    
+    Returns:
+        A message indicating whether the click was successful or an error message.
+    """
+    global driver
+    if driver is None:
+        logger.info("WebDriver is not initialized, initializing now...")
+        try:
+            driver = initialize_driver()
+            logger.info("WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize WebDriver: {str(e)}")
+            return f"Failed to initialize WebDriver: {str(e)}"
+    
+    if text == '' and class_name == '' and id == '':
+        return "Error: At least one of text, class_name, or id must be provided"
+    
+    try:
+        elements = []
+        
+        # Build XPath conditions based on provided arguments
+        conditions = []
+        
+        if id != '':
+            conditions.append(f"@id='{id}'")
+        
+        if class_name != '':
+            conditions.append(f"contains(@class, '{class_name}')")
+        
+        if text != '':
+            conditions.append(f"contains(text(), '{text}')")
+        
+        # Combine conditions with 'and'
+        xpath = "//*"
+        if conditions:
+            xpath += "[" + " and ".join(conditions) + "]"
+        
+        logger.info(f"Looking for elements with XPath: {xpath}")
+        elements = driver.find_elements(By.XPATH, xpath)
+        
+        # Check if we found exactly one element
+        if len(elements) == 0:
+            criteria_str = []
+            if text != '':
+                criteria_str.append(f"text='{text}'")
+            if class_name != '':
+                criteria_str.append(f"class='{class_name}'")
+            if id != '':
+                criteria_str.append(f"id='{id}'")
+            
+            error_msg = f"No elements found matching criteria: {', '.join(criteria_str)}"
+            logger.error(error_msg)
+            return error_msg
+        
+        if len(elements) > 1:
+            error_msg = f"Found {len(elements)} elements matching the criteria. Please provide more specific criteria."
+            logger.error(error_msg)
+            return error_msg
+        
+        # Click the element
+        element = elements[0]
+        element.click()
+        
+        # Build a description of the clicked element
+        tag_name = element.tag_name
+        element_id = element.get_attribute("id") or "no-id"
+        element_class = element.get_attribute("class") or "no-class"
+        element_text = element.text[:50] + "..." if len(element.text) > 50 else element.text
+        
+        return f"Successfully clicked on {tag_name} element with id='{element_id}', class='{element_class}', text='{element_text}'"
+    
+    except Exception as e:
+        error_msg = f"Error clicking element: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
 
 # Main entry point
 if __name__ == "__main__":
