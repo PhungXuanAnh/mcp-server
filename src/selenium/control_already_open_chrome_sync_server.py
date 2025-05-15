@@ -841,17 +841,18 @@ def get_network_errors(filter_url_by_text: str = '') -> str:
         return f"Error getting network errors: {str(e)}"
 
 @mcp.tool()
-def click_to_element(text: str = '', class_name: str = '', id: str = '') -> str:
+def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}) -> str:
     """Click on an element identified by text content, class name, or ID.
     
     This tool finds and clicks on an element based on specified criteria. At least one 
-    of text, class_name, or id must be provided. If multiple elements match the criteria, 
+    of text, class_name, id, or attributes must be provided. If multiple elements match the criteria, 
     or if no elements are found, an error message is returned.
     
     Args:
         text: Text content of the element to click. Case-sensitive text matching.
         class_name: CSS class name of the element to click.
         id: ID attribute of the element to click.
+        attributes: Dictionary of attribute name-value pairs to match (e.g. {'data-test': 'button'}).
     
     Returns:
         A message indicating whether the click was successful or an error message.
@@ -866,8 +867,8 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '') -> str:
             logger.error(f"Failed to initialize WebDriver: {str(e)}")
             return f"Failed to initialize WebDriver: {str(e)}"
     
-    if text == '' and class_name == '' and id == '':
-        return "Error: At least one of text, class_name, or id must be provided"
+    if text == '' and class_name == '' and id == '' and not attributes:
+        return "Error: At least one of text, class_name, id, or attributes must be provided"
     
     try:
         elements = []
@@ -883,6 +884,10 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '') -> str:
         
         if text != '':
             conditions.append(f"contains(text(), '{text}')")
+            
+        # Add conditions for additional attributes
+        for attr_name, attr_value in attributes.items():
+            conditions.append(f"@{attr_name}='{attr_value}'")
         
         # Combine conditions with 'and'
         xpath = "//*"
@@ -901,6 +906,8 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '') -> str:
                 criteria_str.append(f"class='{class_name}'")
             if id != '':
                 criteria_str.append(f"id='{id}'")
+            for attr_name, attr_value in attributes.items():
+                criteria_str.append(f"{attr_name}='{attr_value}'")
             
             error_msg = f"No elements found matching criteria: {', '.join(criteria_str)}"
             logger.error(error_msg)
