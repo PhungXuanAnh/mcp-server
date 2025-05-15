@@ -911,21 +911,60 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '') -> str:
             logger.error(error_msg)
             return error_msg
         
-        # Click the element
+        # Get the element
         element = elements[0]
+        
+        # Store element properties BEFORE clicking
+        # Using try-except for each property to handle potential issues
+        try:
+            tag_name = element.tag_name
+        except:
+            tag_name = "unknown"
+            
+        try:
+            element_id = element.get_attribute("id") or "no-id"
+        except:
+            element_id = "unknown"
+            
+        try:
+            element_class = element.get_attribute("class") or "no-class"
+        except:
+            element_class = "unknown"
+            
+        try:
+            element_text = element.text[:50] + "..." if len(element.text) > 50 else element.text
+        except:
+            element_text = "unknown"
+        
+        # Store current URL before the click
+        current_url = driver.current_url
+        
+        # Now click the element
         element.click()
         
-        # Build a description of the clicked element
-        tag_name = element.tag_name
-        element_id = element.get_attribute("id") or "no-id"
-        element_class = element.get_attribute("class") or "no-class"
-        element_text = element.text[:50] + "..." if len(element.text) > 50 else element.text
+        # Wait a moment for any navigation to start
+        time.sleep(0.5)
         
+        # Check if the URL has changed, indicating navigation occurred
+        new_url = driver.current_url
+        if new_url != current_url:
+            return f"Successfully clicked on {tag_name} element which triggered navigation from {current_url} to {new_url}"
+        
+        # If no navigation occurred, return the standard success message
         return f"Successfully clicked on {tag_name} element with id='{element_id}', class='{element_class}', text='{element_text}'"
     
     except Exception as e:
         error_msg = f"Error clicking element: {str(e)}"
         logger.error(error_msg)
+        
+        # Check if navigation occurred despite the error
+        try:
+            new_url = driver.current_url
+            if 'current_url' in locals() and new_url != current_url:
+                return f"Click succeeded with navigation to {new_url}, but encountered error when reporting: {str(e)}"
+        except:
+            pass
+            
         return error_msg
 
 def is_json_string(value: str) -> bool:
