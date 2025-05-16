@@ -841,7 +841,7 @@ def get_network_errors(filter_url_by_text: str = '') -> str:
         return f"Error getting network errors: {str(e)}"
 
 @mcp.tool()
-def get_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}) -> str:
+def get_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '') -> str:
     """Get an element identified by text content, class name, or ID.
     
     This tool finds an element based on specified criteria. At least one 
@@ -853,6 +853,7 @@ def get_element(text: str = '', class_name: str = '', id: str = '', attributes: 
         class_name: CSS class name of the element to find.
         id: ID attribute of the element to find.
         attributes: Dictionary of attribute name-value pairs to match (e.g. {'data-test': 'button'}).
+        element_type: HTML element type to find (e.g. 'div', 'input', 'h1', 'button', etc.).
     
     Returns:
         A JSON string with information about the found element or an error message.
@@ -867,8 +868,8 @@ def get_element(text: str = '', class_name: str = '', id: str = '', attributes: 
             logger.error(f"Failed to initialize WebDriver: {str(e)}")
             return f"Failed to initialize WebDriver: {str(e)}"
     
-    if text == '' and class_name == '' and id == '' and not attributes:
-        return "Error: At least one of text, class_name, id, or attributes must be provided"
+    if text == '' and class_name == '' and id == '' and not attributes and element_type == '':
+        return "Error: At least one of text, class_name, id, attributes, or element_type must be provided"
     
     try:
         # Build XPath conditions based on provided arguments
@@ -888,7 +889,7 @@ def get_element(text: str = '', class_name: str = '', id: str = '', attributes: 
             conditions.append(f"@{attr_name}='{attr_value}'")
         
         # Combine conditions with 'and'
-        xpath = "//*"
+        xpath = "//" + (element_type if element_type != '' else "*")
         if conditions:
             xpath += "[" + " and ".join(conditions) + "]"
         
@@ -904,6 +905,8 @@ def get_element(text: str = '', class_name: str = '', id: str = '', attributes: 
                 criteria_str.append(f"class='{class_name}'")
             if id != '':
                 criteria_str.append(f"id='{id}'")
+            if element_type != '':
+                criteria_str.append(f"element_type='{element_type}'")
             for attr_name, attr_value in attributes.items():
                 criteria_str.append(f"{attr_name}='{attr_value}'")
             
@@ -958,7 +961,7 @@ def get_element(text: str = '', class_name: str = '', id: str = '', attributes: 
         return error_msg
 
 @mcp.tool()
-def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}) -> str:
+def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '') -> str:
     """Click on an element identified by text content, class name, or ID.
     
     This tool finds and clicks on an element based on specified criteria. At least one 
@@ -970,6 +973,7 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         class_name: CSS class name of the element to click.
         id: ID attribute of the element to click.
         attributes: Dictionary of attribute name-value pairs to match (e.g. {'data-test': 'button'}).
+        element_type: HTML element type to find (e.g. 'div', 'input', 'h1', 'button', etc.).
     
     Returns:
         A message indicating whether the click was successful or an error message.
@@ -986,7 +990,7 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
     
     try:
         # Get element using the get_element function
-        element_info = get_element(text, class_name, id, attributes)
+        element_info = get_element(text, class_name, id, attributes, element_type)
         
         # Parse the JSON result
         try:
@@ -1038,6 +1042,80 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         except:
             pass
             
+        return error_msg
+
+@mcp.tool()
+def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', input_value: str = '') -> str:
+    """Set a value to an input element identified by text content, class name, or ID.
+    
+    This tool finds an input element based on specified criteria and sets the provided value. At least one 
+    of text, class_name, id, or attributes must be provided. If multiple elements match the criteria, 
+    or if no elements are found, an error message is returned.
+    
+    Args:
+        text: Text content of the element to find. Case-sensitive text matching.
+        class_name: CSS class name of the element to find.
+        id: ID attribute of the element to find.
+        attributes: Dictionary of attribute name-value pairs to match (e.g. {'data-test': 'input'}).
+        element_type: HTML element type to find (e.g. 'input', 'textarea', 'select', etc.).
+        input_value: The value to set on the input element.
+    
+    Returns:
+        A message indicating whether setting the value was successful or an error message.
+    """
+    global driver
+    if driver is None:
+        logger.info("WebDriver is not initialized, initializing now...")
+        try:
+            driver = initialize_driver()
+            logger.info("WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize WebDriver: {str(e)}")
+            return f"Failed to initialize WebDriver: {str(e)}"
+    
+    try:
+        # Get element using the get_element function
+        element_info = get_element(text, class_name, id, attributes, element_type)
+        
+        # Parse the JSON result
+        try:
+            element_data = json.loads(element_info)
+            
+            # Check if the element was found
+            if not isinstance(element_data, dict) or not element_data.get("found", False):
+                return element_info  # Return the error message from get_element
+                
+            tag_name = element_data.get("tag_name")
+            element_id = element_data.get("id")
+            element_class = element_data.get("class")
+            xpath = element_data.get("xpath")
+            
+            # Find the element again using the same xpath
+            element = driver.find_element(By.XPATH, xpath)
+            
+        except json.JSONDecodeError:
+            # get_element returned an error message, not JSON
+            return element_info
+        
+        # Check if element is an input-like element that can accept values
+        input_like_tags = ['input', 'textarea', 'select']
+        if tag_name.lower() not in input_like_tags:
+            return f"Error: Found element with tag '{tag_name}' is not an input-like element that can accept values"
+        
+        # Clear existing value
+        element.clear()
+        
+        # Set the new value
+        element.send_keys(input_value)
+        
+        # Verify the value was set (for most input types)
+        current_value = element.get_attribute('value')
+        
+        return f"Successfully set value '{input_value}' to {tag_name} element with id='{element_id}', class='{element_class}'. Current value: '{current_value}'"
+    
+    except Exception as e:
+        error_msg = f"Error setting value to element: {str(e)}"
+        logger.error(error_msg)
         return error_msg
 
 def is_json_string(value: str) -> bool:
