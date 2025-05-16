@@ -841,21 +841,21 @@ def get_network_errors(filter_url_by_text: str = '') -> str:
         return f"Error getting network errors: {str(e)}"
 
 @mcp.tool()
-def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}) -> str:
-    """Click on an element identified by text content, class name, or ID.
+def get_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}) -> str:
+    """Get an element identified by text content, class name, or ID.
     
-    This tool finds and clicks on an element based on specified criteria. At least one 
+    This tool finds an element based on specified criteria. At least one 
     of text, class_name, id, or attributes must be provided. If multiple elements match the criteria, 
     or if no elements are found, an error message is returned.
     
     Args:
-        text: Text content of the element to click. Case-sensitive text matching.
-        class_name: CSS class name of the element to click.
-        id: ID attribute of the element to click.
+        text: Text content of the element to find. Case-sensitive text matching.
+        class_name: CSS class name of the element to find.
+        id: ID attribute of the element to find.
         attributes: Dictionary of attribute name-value pairs to match (e.g. {'data-test': 'button'}).
     
     Returns:
-        A message indicating whether the click was successful or an error message.
+        A JSON string with information about the found element or an error message.
     """
     global driver
     if driver is None:
@@ -871,8 +871,6 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         return "Error: At least one of text, class_name, id, or attributes must be provided"
     
     try:
-        elements = []
-        
         # Build XPath conditions based on provided arguments
         conditions = []
         
@@ -921,8 +919,7 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         # Get the element
         element = elements[0]
         
-        # Store element properties BEFORE clicking
-        # Using try-except for each property to handle potential issues
+        # Get element properties
         try:
             tag_name = element.tag_name
         except:
@@ -942,6 +939,75 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
             element_text = element.text[:50] + "..." if len(element.text) > 50 else element.text
         except:
             element_text = "unknown"
+            
+        # Return element info as JSON
+        element_info = {
+            "found": True,
+            "tag_name": tag_name,
+            "id": element_id,
+            "class": element_class,
+            "text": element_text,
+            "xpath": xpath
+        }
+        
+        return json.dumps(element_info)
+    
+    except Exception as e:
+        error_msg = f"Error finding element: {str(e)}"
+        logger.error(error_msg)
+        return error_msg
+
+@mcp.tool()
+def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}) -> str:
+    """Click on an element identified by text content, class name, or ID.
+    
+    This tool finds and clicks on an element based on specified criteria. At least one 
+    of text, class_name, id, or attributes must be provided. If multiple elements match the criteria, 
+    or if no elements are found, an error message is returned.
+    
+    Args:
+        text: Text content of the element to click. Case-sensitive text matching.
+        class_name: CSS class name of the element to click.
+        id: ID attribute of the element to click.
+        attributes: Dictionary of attribute name-value pairs to match (e.g. {'data-test': 'button'}).
+    
+    Returns:
+        A message indicating whether the click was successful or an error message.
+    """
+    global driver
+    if driver is None:
+        logger.info("WebDriver is not initialized, initializing now...")
+        try:
+            driver = initialize_driver()
+            logger.info("WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize WebDriver: {str(e)}")
+            return f"Failed to initialize WebDriver: {str(e)}"
+    
+    try:
+        # Get element using the get_element function
+        element_info = get_element(text, class_name, id, attributes)
+        
+        # Parse the JSON result
+        try:
+            element_data = json.loads(element_info)
+            
+            # Check if the element was found
+            if not isinstance(element_data, dict) or not element_data.get("found", False):
+                return element_info  # Return the error message from get_element
+                
+            tag_name = element_data.get("tag_name")
+            element_id = element_data.get("id")
+            element_class = element_data.get("class")
+            element_text = element_data.get("text")
+            xpath = element_data.get("xpath")
+            
+            # Find the element again using the same xpath
+            element = driver.find_element(By.XPATH, xpath)
+            
+        except json.JSONDecodeError:
+            # get_element returned an error message, not JSON
+            return element_info
         
         # Store current URL before the click
         current_url = driver.current_url
