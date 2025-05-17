@@ -41,12 +41,20 @@ LOGGING_CONFIG = {
             "maxBytes": 100000 * 1024,  # 100MB
             "backupCount": 3,
         },
+        "app.INFO": {
+            "level": "INFO",
+            "class": "logging.handlers.RotatingFileHandler",
+            "formatter": "verbose",
+            "filename": "/tmp/selenium-mcp.log",
+            "maxBytes": 100000 * 1024,  # 100MB
+            "backupCount": 3,
+        },
     },
     "loggers": {
         "root": {
-            "handlers": ["app.DEBUG"],
+            "handlers": ["app.INFO"],
             "propagate": False,
-            "level": "DEBUG",
+            "level": "INFO",
         },
     },
 }
