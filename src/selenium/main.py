@@ -1023,7 +1023,32 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
         elements_info = []
         
         # Process each element
-        for element in paginated_elements:
+        for i, element in enumerate(paginated_elements):
+            # Generate a unique XPath for this specific element
+            try:
+                unique_xpath = driver.execute_script("""
+                function getPathTo(element) {
+                    if (element.id !== '')
+                        return '//*[@id="' + element.id + '"]';
+                    if (element === document.body)
+                        return '/html/body';
+
+                    var ix = 0;
+                    var siblings = element.parentNode.childNodes;
+                    for (var i = 0; i < siblings.length; i++) {
+                        var sibling = siblings[i];
+                        if (sibling === element)
+                            return getPathTo(element.parentNode) + '/' + element.tagName.toLowerCase() + '[' + (ix + 1) + ']';
+                        if (sibling.nodeType === 1 && sibling.tagName === element.tagName)
+                            ix++;
+                    }
+                }
+                return getPathTo(arguments[0]);
+                """, element)
+            except:
+                # Fallback if JS execution fails
+                unique_xpath = f"{xpath}[{i + 1}]"
+                
             if return_html:
                 # Get HTML content for this element
                 try:
@@ -1032,13 +1057,15 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
                     
                     elements_info.append({
                         "innerHTML": inner_html,
-                        "outerHTML": outer_html
+                        "outerHTML": outer_html,
+                        "uniqueXPath": unique_xpath
                     })
                 except Exception as html_e:
                     elements_info.append({
                         "error": f"Error getting HTML: {str(html_e)}",
                         "innerHTML": "",
-                        "outerHTML": ""
+                        "outerHTML": "",
+                        "uniqueXPath": unique_xpath
                     })
             else:
                 # Get standard element info
@@ -1066,7 +1093,8 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
                     "tag_name": tag_name,
                     "id": element_id,
                     "class": element_class,
-                    "text": element_text
+                    "text": element_text,
+                    "uniqueXPath": unique_xpath
                 })
         
         # Return elements info as JSON
