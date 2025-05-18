@@ -99,6 +99,11 @@ class ClickElement(BaseModel):
     text: Optional[str] = Field(default=None, description="Text content of the element to click")
     class_name: Optional[str] = Field(default=None, description="Class name of the element to click")
     id: Optional[str] = Field(default=None, description="ID of the element to click")
+    attributes: Dict[str, Any] = Field(default_factory=dict, description="Dictionary of attribute name-value pairs to match")
+    element_type: Optional[str] = Field(default=None, description="HTML element type to find")
+    in_iframe_id: Optional[str] = Field(default=None, description="ID of the iframe to search within")
+    in_iframe_name: Optional[str] = Field(default=None, description="Name of the iframe to search within")
+    element_index: int = Field(default=-1, description="Index of the element to click if multiple elements match the criteria. -1 means don't use this parameter.")
 
 class LocalStorageAdd(BaseModel):
     key: str = Field(description="Key for the local storage item")
@@ -1287,7 +1292,7 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
         })
 
 @mcp.tool()
-def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '') -> str:
+def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', element_index: int = -1) -> str:
     """Click on an element identified by text content, class name, or ID.
     
     This tool finds and clicks on an element based on specified criteria. At least one 
@@ -1302,6 +1307,7 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         element_type: HTML element type to find (e.g. 'div', 'input', 'h1', 'button', etc.).
         in_iframe_id: ID of the iframe to search within. If provided, the function will switch to this iframe before searching.
         in_iframe_name: Name of the iframe to search within. If provided and in_iframe_id is not provided, the function will switch to this iframe before searching.
+        element_index: Index of the element to click if multiple elements match the criteria. Default is -1 (don't use this parameter).
     
     Returns:
         A message indicating whether the click was successful or an error message.
@@ -1317,65 +1323,138 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
             return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
-        # Get element using the get_element function
-        element_info = get_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
-        
-        # Parse the JSON result
-        try:
-            element_data = json.loads(element_info)
-            
-            # Check if the element was found
-            if not isinstance(element_data, dict) or not element_data.get("found", False):
-                return element_info  # Return the error message from get_element
-                
-            tag_name = element_data.get("tag_name")
-            element_id = element_data.get("id")
-            element_class = element_data.get("class")
-            element_text = element_data.get("text")
-            xpath = element_data.get("xpath")
-            iframe_id = element_data.get("in_iframe_id")
-            iframe_name = element_data.get("in_iframe_name")
-            
-            # Switch to iframe if needed
-            original_context = True
-            if iframe_id or iframe_name:
-                try:
-                    if iframe_id:
-                        iframe = driver.find_element(By.ID, iframe_id)
-                        driver.switch_to.frame(iframe)
-                    elif iframe_name:
-                        driver.switch_to.frame(iframe_name)
-                    original_context = False
-                except Exception as iframe_e:
-                    return f"Error switching to iframe for clicking: {str(iframe_e)}"
-            
-            # Find the element again using the same xpath
-            element = driver.find_element(By.XPATH, xpath)
-            
-        except json.JSONDecodeError:
-            # get_element returned an error message, not JSON
-            return element_info
-        
         # Store current URL before the click
         current_url = driver.current_url
         
-        # Now click the element
-        element.click()
-        
-        # Wait a moment for any navigation to start
-        time.sleep(0.5)
-        
-        # Switch back to default content
-        if not original_context:
-            driver.switch_to.default_content()
-        
-        # Check if the URL has changed, indicating navigation occurred
-        new_url = driver.current_url
-        if new_url != current_url:
-            return f"Successfully clicked on {tag_name} element which triggered navigation from {current_url} to {new_url}"
-        
-        # If no navigation occurred, return the standard success message
-        return f"Successfully clicked on {tag_name} element with id='{element_id}', class='{element_class}', text='{element_text}'"
+        if element_index >= 0:
+            # Use get_elements to get multiple elements if index is specified
+            logger.info(f"Using element_index {element_index} to select from multiple matching elements")
+            elements_info = get_elements(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
+            
+            # Parse the JSON result
+            try:
+                elements_data = json.loads(elements_info)
+                
+                # Check if elements were found
+                if not isinstance(elements_data, dict) or not elements_data.get("found", False):
+                    return elements_info  # Return the error message from get_elements
+                
+                total_elements = elements_data.get("total_elements", 0)
+                
+                if total_elements == 0:
+                    return f"No elements found matching the given criteria"
+                
+                if element_index >= total_elements:
+                    return f"Index {element_index} is out of bounds. Only {total_elements} elements were found."
+                
+                # Get all elements matching the criteria using XPath
+                xpath = elements_data.get("xpath")
+                iframe_id = elements_data.get("in_iframe_id")
+                iframe_name = elements_data.get("in_iframe_name")
+                
+                # Switch to iframe if needed
+                original_context = True
+                if iframe_id or iframe_name:
+                    try:
+                        if iframe_id:
+                            iframe = driver.find_element(By.ID, iframe_id)
+                            driver.switch_to.frame(iframe)
+                        elif iframe_name:
+                            driver.switch_to.frame(iframe_name)
+                        original_context = False
+                    except Exception as iframe_e:
+                        return f"Error switching to iframe for clicking: {str(iframe_e)}"
+                
+                # Find all matching elements
+                all_elements = driver.find_elements(By.XPATH, xpath)
+                
+                # Get the element at the specified index
+                target_element = all_elements[element_index]
+                
+                # Get element info for the log message
+                element_tag = target_element.tag_name
+                element_id = target_element.get_attribute("id") or "no-id"
+                element_class = target_element.get_attribute("class") or "no-class"
+                element_text = target_element.text[:50] + "..." if len(target_element.text) > 50 else target_element.text
+                
+                # Click the target element
+                target_element.click()
+                
+                # Wait a moment for any navigation to start
+                time.sleep(0.5)
+                
+                # Switch back to default content
+                if not original_context:
+                    driver.switch_to.default_content()
+                
+                # Check if the URL has changed, indicating navigation occurred
+                new_url = driver.current_url
+                if new_url != current_url:
+                    return f"Successfully clicked on element at index {element_index} which triggered navigation from {current_url} to {new_url}"
+                
+                # If no navigation occurred, return the standard success message
+                return f"Successfully clicked on {element_tag} element at index {element_index} with id='{element_id}', class='{element_class}', text='{element_text}'"
+                
+            except (json.JSONDecodeError, IndexError, Exception) as e:
+                return f"Error selecting element at index {element_index}: {str(e)}"
+        else:
+            # Use the original behavior when element_index is -1
+            # Get element using the get_element function
+            element_info = get_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
+            
+            # Parse the JSON result
+            try:
+                element_data = json.loads(element_info)
+                
+                # Check if the element was found
+                if not isinstance(element_data, dict) or not element_data.get("found", False):
+                    return element_info  # Return the error message from get_element
+                    
+                tag_name = element_data.get("tag_name")
+                element_id = element_data.get("id")
+                element_class = element_data.get("class")
+                element_text = element_data.get("text")
+                xpath = element_data.get("xpath")
+                iframe_id = element_data.get("in_iframe_id")
+                iframe_name = element_data.get("in_iframe_name")
+                
+                # Switch to iframe if needed
+                original_context = True
+                if iframe_id or iframe_name:
+                    try:
+                        if iframe_id:
+                            iframe = driver.find_element(By.ID, iframe_id)
+                            driver.switch_to.frame(iframe)
+                        elif iframe_name:
+                            driver.switch_to.frame(iframe_name)
+                        original_context = False
+                    except Exception as iframe_e:
+                        return f"Error switching to iframe for clicking: {str(iframe_e)}"
+                
+                # Find the element again using the same xpath
+                element = driver.find_element(By.XPATH, xpath)
+                
+            except json.JSONDecodeError:
+                # get_element returned an error message, not JSON
+                return element_info
+            
+            # Now click the element
+            element.click()
+            
+            # Wait a moment for any navigation to start
+            time.sleep(0.5)
+            
+            # Switch back to default content
+            if not original_context:
+                driver.switch_to.default_content()
+            
+            # Check if the URL has changed, indicating navigation occurred
+            new_url = driver.current_url
+            if new_url != current_url:
+                return f"Successfully clicked on {tag_name} element which triggered navigation from {current_url} to {new_url}"
+            
+            # If no navigation occurred, return the standard success message
+            return f"Successfully clicked on {tag_name} element with id='{element_id}', class='{element_class}', text='{element_text}'"
     
     except Exception as e:
         error_msg = f"Error clicking element: {str(e)}"
