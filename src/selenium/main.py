@@ -1401,13 +1401,6 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
             
         return error_msg
 
-def is_json_string(value: str) -> bool:
-    try:
-        json.loads(value)
-        return True
-    except:
-        return False
-
 @mcp.tool()
 def local_storage_add(key: str, string_value: str = '', object_value: dict = {}, create_empty_string: bool = False, create_empty_object: bool = False) -> str:
     """Add or update a key-value pair in browser's local storage.
