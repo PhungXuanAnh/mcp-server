@@ -672,11 +672,11 @@ def get_network_errors(filter_url_by_text: str = '') -> str:
         return f"Error getting network errors: {str(e)}"
 
 @mcp.tool()
-def get_an_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', return_html: bool = False) -> str:
+def get_an_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', return_html: bool = False, xpath: str = '') -> str:
     """Get an element identified by text content, class name, or ID.
     
     This tool finds an element based on specified criteria. At least one 
-    of text, class_name, id, or attributes must be provided. If multiple elements match the criteria, 
+    of text, class_name, id, attributes, element_type, or xpath must be provided. If multiple elements match the criteria, 
     or if no elements are found, an error message is returned.
     
     Args:
@@ -688,6 +688,7 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
         in_iframe_id: ID of the iframe to search within. If provided, the function will switch to this iframe before searching.
         in_iframe_name: Name of the iframe to search within. If provided and in_iframe_id is not provided, the function will switch to this iframe before searching.
         return_html: Return the HTML content of the element instead of JSON information.
+        xpath: Direct XPath selector to find the element. When provided, other selection criteria are ignored.
     
     Returns:
         A JSON string with information about the found element or an error message.
@@ -703,8 +704,8 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
             logger.error(f"Failed to initialize WebDriver: {str(e)}")
             return f"Failed to initialize WebDriver: {str(e)}"
     
-    if text == '' and class_name == '' and id == '' and not attributes and element_type == '':
-        return "Error: At least one of text, class_name, id, attributes, or element_type must be provided"
+    if text == '' and class_name == '' and id == '' and not attributes and element_type == '' and xpath == '':
+        return "Error: At least one of text, class_name, id, attributes, element_type, or xpath must be provided"
     
     try:
         # Remember the original context to switch back later
@@ -729,31 +730,36 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
                 logger.error(error_msg)
                 return error_msg
         
-        # Build XPath conditions based on provided arguments
-        conditions = []
-        
-        if id != '':
-            conditions.append(f"@id='{id}'")
-        
-        if class_name != '':
-            # Handle multiple class names by ensuring each is present
-            for cn in class_name.split():
-                conditions.append(f"contains(@class, '{cn}')")
-        
-        if text != '':
-            conditions.append(f"contains(text(), '{text}')")
+        # If xpath is provided, use it directly
+        if xpath != '':
+            logger.info(f"Looking for elements with provided XPath: {xpath}")
+            elements = driver.find_elements(By.XPATH, xpath)
+        else:
+            # Build XPath conditions based on provided arguments
+            conditions = []
             
-        # Add conditions for additional attributes
-        for attr_name, attr_value in attributes.items():
-            conditions.append(f"@{attr_name}='{attr_value}'")
-        
-        # Combine conditions with 'and'
-        xpath = "//" + (element_type if element_type != '' else "*")
-        if conditions:
-            xpath += "[" + " and ".join(conditions) + "]"
-        
-        logger.info(f"Looking for elements with XPath: {xpath}")
-        elements = driver.find_elements(By.XPATH, xpath)
+            if id != '':
+                conditions.append(f"@id='{id}'")
+            
+            if class_name != '':
+                # Handle multiple class names by ensuring each is present
+                for cn in class_name.split():
+                    conditions.append(f"contains(@class, '{cn}')")
+            
+            if text != '':
+                conditions.append(f"contains(text(), '{text}')")
+                
+            # Add conditions for additional attributes
+            for attr_name, attr_value in attributes.items():
+                conditions.append(f"@{attr_name}='{attr_value}'")
+            
+            # Combine conditions with 'and'
+            xpath = "//" + (element_type if element_type != '' else "*")
+            if conditions:
+                xpath += "[" + " and ".join(conditions) + "]"
+            
+            logger.info(f"Looking for elements with XPath: {xpath}")
+            elements = driver.find_elements(By.XPATH, xpath)
         
         # Check if we found exactly one element
         if len(elements) == 0:
@@ -768,6 +774,8 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
                 criteria_str.append(f"element_type='{element_type}'")
             for attr_name, attr_value in attributes.items():
                 criteria_str.append(f"{attr_name}='{attr_value}'")
+            if xpath != '':
+                criteria_str.append(f"xpath='{xpath}'")
             
             error_msg = f"No elements found matching criteria: {', '.join(criteria_str)}"
             logger.error(error_msg)
@@ -870,11 +878,11 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
         return error_msg
 
 @mcp.tool()
-def get_elements(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', page: int = 1, page_size: int = 3, return_html: bool = False) -> str:
+def get_elements(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', page: int = 1, page_size: int = 3, return_html: bool = False, xpath: str = '') -> str:
     """Get multiple elements identified by text content, class name, or ID with pagination.
     
     This tool finds elements based on specified criteria. At least one 
-    of text, class_name, id, or attributes must be provided. Unlike get_an_element,
+    of text, class_name, id, attributes, element_type, or xpath must be provided. Unlike get_an_element,
     this function returns multiple elements with pagination support.
     
     Args:
@@ -888,6 +896,7 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
         page: Current page of elements returned in the response (default: 1).
         page_size: Number of elements to return in the response (default: 3).
         return_html: Return the HTML content of the elements instead of JSON information.
+        xpath: Direct XPath selector to find the elements. When provided, other selection criteria are ignored.
     
     Returns:
         A JSON string with information about the found elements or an error message.
@@ -903,8 +912,8 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
             logger.error(f"Failed to initialize WebDriver: {str(e)}")
             return f"Failed to initialize WebDriver: {str(e)}"
     
-    if text == '' and class_name == '' and id == '' and not attributes and element_type == '':
-        return "Error: At least one of text, class_name, id, attributes, or element_type must be provided"
+    if text == '' and class_name == '' and id == '' and not attributes and element_type == '' and xpath == '':
+        return "Error: At least one of text, class_name, id, attributes, element_type, or xpath must be provided"
     
     # Validate pagination parameters
     if page < 1:
@@ -935,31 +944,37 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
                 logger.error(error_msg)
                 return error_msg
         
-        # Build XPath conditions based on provided arguments
-        conditions = []
-        
-        if id != '':
-            conditions.append(f"@id='{id}'")
-        
-        if class_name != '':
-            # Handle multiple class names by ensuring each is present
-            for cn in class_name.split():
-                conditions.append(f"contains(@class, '{cn}')")
-        
-        if text != '':
-            conditions.append(f"contains(text(), '{text}')")
+        # If xpath is provided, use it directly
+        if xpath != '':
+            logger.info(f"Looking for elements with provided XPath: {xpath}")
+            all_elements = driver.find_elements(By.XPATH, xpath)
+            search_xpath = xpath
+        else:
+            # Build XPath conditions based on provided arguments
+            conditions = []
             
-        # Add conditions for additional attributes
-        for attr_name, attr_value in attributes.items():
-            conditions.append(f"@{attr_name}='{attr_value}'")
-        
-        # Combine conditions with 'and'
-        xpath = "//" + (element_type if element_type != '' else "*")
-        if conditions:
-            xpath += "[" + " and ".join(conditions) + "]"
-        
-        logger.info(f"Looking for elements with XPath: {xpath}")
-        all_elements = driver.find_elements(By.XPATH, xpath)
+            if id != '':
+                conditions.append(f"@id='{id}'")
+            
+            if class_name != '':
+                # Handle multiple class names by ensuring each is present
+                for cn in class_name.split():
+                    conditions.append(f"contains(@class, '{cn}')")
+            
+            if text != '':
+                conditions.append(f"contains(text(), '{text}')")
+                
+            # Add conditions for additional attributes
+            for attr_name, attr_value in attributes.items():
+                conditions.append(f"@{attr_name}='{attr_value}'")
+            
+            # Combine conditions with 'and'
+            search_xpath = "//" + (element_type if element_type != '' else "*")
+            if conditions:
+                search_xpath += "[" + " and ".join(conditions) + "]"
+            
+            logger.info(f"Looking for elements with XPath: {search_xpath}")
+            all_elements = driver.find_elements(By.XPATH, search_xpath)
         
         total_elements = len(all_elements)
         total_pages = (total_elements + page_size - 1) // page_size if total_elements > 0 else 1
@@ -977,6 +992,8 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
                 criteria_str.append(f"element_type='{element_type}'")
             for attr_name, attr_value in attributes.items():
                 criteria_str.append(f"{attr_name}='{attr_value}'")
+            if xpath != '':
+                criteria_str.append(f"xpath='{xpath}'")
             
             error_msg = f"No elements found matching criteria: {', '.join(criteria_str)}"
             logger.error(error_msg)
@@ -1047,7 +1064,7 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
                 """, element)
             except:
                 # Fallback if JS execution fails
-                unique_xpath = f"{xpath}[{i + 1}]"
+                unique_xpath = f"{search_xpath}[{i + 1}]"
                 
             if return_html:
                 # Get HTML content for this element
@@ -1105,7 +1122,7 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
             "page_size": page_size,
             "total_pages": total_pages,
             "elements": elements_info,
-            "xpath": xpath,
+            "xpath": search_xpath,
             "in_iframe_id": in_iframe_id,
             "in_iframe_name": in_iframe_name
         }
@@ -1138,11 +1155,11 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
         })
 
 @mcp.tool()
-def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', element_index: int = -1) -> str:
+def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', element_index: int = -1, xpath: str = '') -> str:
     """Click on an element identified by text content, class name, or ID.
     
     This tool finds and clicks on an element based on specified criteria. At least one 
-    of text, class_name, id, or attributes must be provided. If multiple elements match the criteria, 
+    of text, class_name, id, attributes, element_type, or xpath must be provided. If multiple elements match the criteria, 
     or if no elements are found, an error message is returned.
     
     Args:
@@ -1154,6 +1171,7 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         in_iframe_id: ID of the iframe to search within. If provided, the function will switch to this iframe before searching.
         in_iframe_name: Name of the iframe to search within. If provided and in_iframe_id is not provided, the function will switch to this iframe before searching.
         element_index: Index of the element to click if multiple elements match the criteria. Default is -1 (don't use this parameter).
+        xpath: Direct XPath selector to find the element. When provided, other selection criteria are ignored.
     
     Returns:
         A message indicating whether the click was successful or an error message.
@@ -1175,7 +1193,10 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         if element_index >= 0:
             # Use get_elements to get multiple elements if index is specified
             logger.info(f"Using element_index {element_index} to select from multiple matching elements")
-            elements_info = get_elements(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
+            elements_info = get_elements(text, class_name, id, attributes, element_type, 
+                                        in_iframe_id, in_iframe_name, 
+                                        page=1, page_size=max(element_index+1, 3),
+                                        return_html=False, xpath=xpath)
             
             # Parse the JSON result
             try:
@@ -1194,25 +1215,25 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
                     return f"Index {element_index} is out of bounds. Only {total_elements} elements were found."
                 
                 # Get all elements matching the criteria using XPath
-                xpath = elements_data.get("xpath")
-                iframe_id = elements_data.get("in_iframe_id")
-                iframe_name = elements_data.get("in_iframe_name")
+                elements_xpath = elements_data.get("xpath", "")
+                elements_iframe_id = elements_data.get("in_iframe_id", "")
+                elements_iframe_name = elements_data.get("in_iframe_name", "")
                 
                 # Switch to iframe if needed
                 original_context = True
-                if iframe_id or iframe_name:
+                if elements_iframe_id or elements_iframe_name:
                     try:
-                        if iframe_id:
-                            iframe = driver.find_element(By.ID, iframe_id)
+                        if elements_iframe_id:
+                            iframe = driver.find_element(By.ID, elements_iframe_id)
                             driver.switch_to.frame(iframe)
-                        elif iframe_name:
-                            driver.switch_to.frame(iframe_name)
+                        elif elements_iframe_name:
+                            driver.switch_to.frame(elements_iframe_name)
                         original_context = False
                     except Exception as iframe_e:
                         return f"Error switching to iframe for clicking: {str(iframe_e)}"
                 
                 # Find all matching elements
-                all_elements = driver.find_elements(By.XPATH, xpath)
+                all_elements = driver.find_elements(By.XPATH, elements_xpath)
                 
                 # Get the element at the specified index
                 target_element = all_elements[element_index]
@@ -1246,7 +1267,9 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         else:
             # Use the original behavior when element_index is -1
             # Get element using the get_element function
-            element_info = get_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
+            element_info = get_an_element(text, class_name, id, attributes, element_type, 
+                                       in_iframe_id, in_iframe_name, 
+                                       return_html=False, xpath=xpath)
             
             # Parse the JSON result
             try:
@@ -1256,29 +1279,29 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
                 if not isinstance(element_data, dict) or not element_data.get("found", False):
                     return element_info  # Return the error message from get_element
                     
-                tag_name = element_data.get("tag_name")
-                element_id = element_data.get("id")
-                element_class = element_data.get("class")
-                element_text = element_data.get("text")
-                xpath = element_data.get("xpath")
-                iframe_id = element_data.get("in_iframe_id")
-                iframe_name = element_data.get("in_iframe_name")
+                single_tag_name = element_data.get("tag_name", "unknown")
+                single_element_id = element_data.get("id", "unknown")
+                single_element_class = element_data.get("class", "unknown")
+                single_element_text = element_data.get("text", "")
+                single_xpath = element_data.get("xpath", "")
+                single_iframe_id = element_data.get("in_iframe_id", "")
+                single_iframe_name = element_data.get("in_iframe_name", "")
                 
                 # Switch to iframe if needed
                 original_context = True
-                if iframe_id or iframe_name:
+                if single_iframe_id or single_iframe_name:
                     try:
-                        if iframe_id:
-                            iframe = driver.find_element(By.ID, iframe_id)
+                        if single_iframe_id:
+                            iframe = driver.find_element(By.ID, single_iframe_id)
                             driver.switch_to.frame(iframe)
-                        elif iframe_name:
-                            driver.switch_to.frame(iframe_name)
+                        elif single_iframe_name:
+                            driver.switch_to.frame(single_iframe_name)
                         original_context = False
                     except Exception as iframe_e:
                         return f"Error switching to iframe for clicking: {str(iframe_e)}"
                 
                 # Find the element again using the same xpath
-                element = driver.find_element(By.XPATH, xpath)
+                element = driver.find_element(By.XPATH, single_xpath)
                 
             except json.JSONDecodeError:
                 # get_element returned an error message, not JSON
@@ -1297,10 +1320,10 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
             # Check if the URL has changed, indicating navigation occurred
             new_url = driver.current_url
             if new_url != current_url:
-                return f"Successfully clicked on {tag_name} element which triggered navigation from {current_url} to {new_url}"
+                return f"Successfully clicked on {single_tag_name} element which triggered navigation from {current_url} to {new_url}"
             
             # If no navigation occurred, return the standard success message
-            return f"Successfully clicked on {tag_name} element with id='{element_id}', class='{element_class}', text='{element_text}'"
+            return f"Successfully clicked on {single_tag_name} element with id='{single_element_id}', class='{single_element_class}', text='{single_element_text}'"
     
     except Exception as e:
         error_msg = f"Error clicking element: {str(e)}"
@@ -1324,11 +1347,11 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         return error_msg
 
 @mcp.tool()
-def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', input_value: str = '', in_iframe_id: str = '', in_iframe_name: str = '') -> str:
+def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', input_value: str = '', in_iframe_id: str = '', in_iframe_name: str = '', xpath: str = '') -> str:
     """Set a value to an input element identified by text content, class name, or ID.
     
     This tool finds an input element based on specified criteria and sets the provided value. At least one 
-    of text, class_name, id, or attributes must be provided. If multiple elements match the criteria, 
+    of text, class_name, id, attributes, element_type, or xpath must be provided. If multiple elements match the criteria, 
     or if no elements are found, an error message is returned.
     
     Args:
@@ -1340,6 +1363,7 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
         input_value: The value to set on the input element.
         in_iframe_id: ID of the iframe to search within. If provided, the function will switch to this iframe before searching.
         in_iframe_name: Name of the iframe to search within. If provided and in_iframe_id is not provided, the function will switch to this iframe before searching.
+        xpath: Direct XPath selector to find the element. When provided, other selection criteria are ignored.
     
     Returns:
         A message indicating whether setting the value was successful or an error message.
@@ -1356,7 +1380,7 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
     
     try:
         # Get element using the get_element function
-        element_info = get_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
+        element_info = get_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name, False, xpath)
         
         # Parse the JSON result
         try:
@@ -1366,12 +1390,12 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
             if not isinstance(element_data, dict) or not element_data.get("found", False):
                 return element_info  # Return the error message from get_element
                 
-            tag_name = element_data.get("tag_name")
-            element_id = element_data.get("id")
-            element_class = element_data.get("class")
-            xpath = element_data.get("xpath")
-            iframe_id = element_data.get("in_iframe_id")
-            iframe_name = element_data.get("in_iframe_name")
+            tag_name = element_data.get("tag_name", "unknown")
+            element_id = element_data.get("id", "unknown")
+            element_class = element_data.get("class", "unknown")
+            xpath = element_data.get("xpath", "")
+            iframe_id = element_data.get("in_iframe_id", "")
+            iframe_name = element_data.get("in_iframe_name", "")
             
             # Switch to iframe if needed
             original_context = True
