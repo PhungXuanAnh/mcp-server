@@ -849,7 +849,7 @@ def get_network_errors(filter_url_by_text: str = '') -> str:
         return f"Error getting network errors: {str(e)}"
 
 @mcp.tool()
-def get_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '') -> str:
+def get_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '') -> str:
     """Get an element identified by text content, class name, or ID.
     
     This tool finds an element based on specified criteria. At least one 
@@ -862,6 +862,8 @@ def get_element(text: str = '', class_name: str = '', id: str = '', attributes: 
         id: ID attribute of the element to find.
         attributes: Dictionary of attribute name-value pairs to match (e.g. {'data-test': 'button'}).
         element_type: HTML element type to find (e.g. 'div', 'input', 'h1', 'button', etc.).
+        in_iframe_id: ID of the iframe to search within. If provided, the function will switch to this iframe before searching.
+        in_iframe_name: Name of the iframe to search within. If provided and in_iframe_id is not provided, the function will switch to this iframe before searching.
     
     Returns:
         A JSON string with information about the found element or an error message.
@@ -880,6 +882,28 @@ def get_element(text: str = '', class_name: str = '', id: str = '', attributes: 
         return "Error: At least one of text, class_name, id, attributes, or element_type must be provided"
     
     try:
+        # Remember the original context to switch back later
+        original_context = True
+        
+        # Switch to iframe if specified
+        if in_iframe_id or in_iframe_name:
+            logger.info(f"Switching to iframe with id='{in_iframe_id}' or name='{in_iframe_name}'")
+            try:
+                if in_iframe_id:
+                    # First try to find the iframe by ID
+                    iframe = driver.find_element(By.ID, in_iframe_id)
+                    driver.switch_to.frame(iframe)
+                    logger.info(f"Successfully switched to iframe with id='{in_iframe_id}'")
+                elif in_iframe_name:
+                    # If ID not provided, try by name
+                    driver.switch_to.frame(in_iframe_name)
+                    logger.info(f"Successfully switched to iframe with name='{in_iframe_name}'")
+                original_context = False
+            except Exception as iframe_e:
+                error_msg = f"Error switching to iframe: {str(iframe_e)}"
+                logger.error(error_msg)
+                return error_msg
+        
         # Build XPath conditions based on provided arguments
         conditions = []
         
@@ -887,7 +911,9 @@ def get_element(text: str = '', class_name: str = '', id: str = '', attributes: 
             conditions.append(f"@id='{id}'")
         
         if class_name != '':
-            conditions.append(f"contains(@class, '{class_name}')")
+            # Handle multiple class names by ensuring each is present
+            for cn in class_name.split():
+                conditions.append(f"contains(@class, '{cn}')")
         
         if text != '':
             conditions.append(f"contains(text(), '{text}')")
@@ -920,11 +946,21 @@ def get_element(text: str = '', class_name: str = '', id: str = '', attributes: 
             
             error_msg = f"No elements found matching criteria: {', '.join(criteria_str)}"
             logger.error(error_msg)
+            
+            # Switch back to original context before returning
+            if not original_context:
+                driver.switch_to.default_content()
+                
             return error_msg
         
         if len(elements) > 1:
             error_msg = f"Found {len(elements)} elements matching the criteria. Please provide more specific criteria."
             logger.error(error_msg)
+            
+            # Switch back to original context before returning
+            if not original_context:
+                driver.switch_to.default_content()
+                
             return error_msg
         
         # Get the element
@@ -958,18 +994,32 @@ def get_element(text: str = '', class_name: str = '', id: str = '', attributes: 
             "id": element_id,
             "class": element_class,
             "text": element_text,
-            "xpath": xpath
+            "xpath": xpath,
+            "in_iframe_id": in_iframe_id,
+            "in_iframe_name": in_iframe_name
         }
         
+        # Switch back to original context
+        if not original_context:
+            driver.switch_to.default_content()
+            
         return json.dumps(element_info)
     
     except Exception as e:
         error_msg = f"Error finding element: {str(e)}"
         logger.error(error_msg)
+        
+        # Switch back to original context in case of error
+        try:
+            if 'original_context' in locals() and not original_context:
+                driver.switch_to.default_content()
+        except:
+            pass
+            
         return error_msg
 
 @mcp.tool()
-def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '') -> str:
+def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '') -> str:
     """Click on an element identified by text content, class name, or ID.
     
     This tool finds and clicks on an element based on specified criteria. At least one 
@@ -982,6 +1032,8 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         id: ID attribute of the element to click.
         attributes: Dictionary of attribute name-value pairs to match (e.g. {'data-test': 'button'}).
         element_type: HTML element type to find (e.g. 'div', 'input', 'h1', 'button', etc.).
+        in_iframe_id: ID of the iframe to search within. If provided, the function will switch to this iframe before searching.
+        in_iframe_name: Name of the iframe to search within. If provided and in_iframe_id is not provided, the function will switch to this iframe before searching.
     
     Returns:
         A message indicating whether the click was successful or an error message.
@@ -998,7 +1050,7 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
     
     try:
         # Get element using the get_element function
-        element_info = get_element(text, class_name, id, attributes, element_type)
+        element_info = get_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
         
         # Parse the JSON result
         try:
@@ -1013,6 +1065,21 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
             element_class = element_data.get("class")
             element_text = element_data.get("text")
             xpath = element_data.get("xpath")
+            iframe_id = element_data.get("in_iframe_id")
+            iframe_name = element_data.get("in_iframe_name")
+            
+            # Switch to iframe if needed
+            original_context = True
+            if iframe_id or iframe_name:
+                try:
+                    if iframe_id:
+                        iframe = driver.find_element(By.ID, iframe_id)
+                        driver.switch_to.frame(iframe)
+                    elif iframe_name:
+                        driver.switch_to.frame(iframe_name)
+                    original_context = False
+                except Exception as iframe_e:
+                    return f"Error switching to iframe for clicking: {str(iframe_e)}"
             
             # Find the element again using the same xpath
             element = driver.find_element(By.XPATH, xpath)
@@ -1030,6 +1097,10 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         # Wait a moment for any navigation to start
         time.sleep(0.5)
         
+        # Switch back to default content
+        if not original_context:
+            driver.switch_to.default_content()
+        
         # Check if the URL has changed, indicating navigation occurred
         new_url = driver.current_url
         if new_url != current_url:
@@ -1042,6 +1113,13 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         error_msg = f"Error clicking element: {str(e)}"
         logger.error(error_msg)
         
+        # Switch back to default content in case of error
+        try:
+            if 'original_context' in locals() and not original_context:
+                driver.switch_to.default_content()
+        except:
+            pass
+        
         # Check if navigation occurred despite the error
         try:
             new_url = driver.current_url
@@ -1053,7 +1131,7 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         return error_msg
 
 @mcp.tool()
-def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', input_value: str = '') -> str:
+def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', input_value: str = '', in_iframe_id: str = '', in_iframe_name: str = '') -> str:
     """Set a value to an input element identified by text content, class name, or ID.
     
     This tool finds an input element based on specified criteria and sets the provided value. At least one 
@@ -1067,6 +1145,8 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
         attributes: Dictionary of attribute name-value pairs to match (e.g. {'data-test': 'input'}).
         element_type: HTML element type to find (e.g. 'input', 'textarea', 'select', etc.).
         input_value: The value to set on the input element.
+        in_iframe_id: ID of the iframe to search within. If provided, the function will switch to this iframe before searching.
+        in_iframe_name: Name of the iframe to search within. If provided and in_iframe_id is not provided, the function will switch to this iframe before searching.
     
     Returns:
         A message indicating whether setting the value was successful or an error message.
@@ -1083,7 +1163,7 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
     
     try:
         # Get element using the get_element function
-        element_info = get_element(text, class_name, id, attributes, element_type)
+        element_info = get_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
         
         # Parse the JSON result
         try:
@@ -1097,6 +1177,21 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
             element_id = element_data.get("id")
             element_class = element_data.get("class")
             xpath = element_data.get("xpath")
+            iframe_id = element_data.get("in_iframe_id")
+            iframe_name = element_data.get("in_iframe_name")
+            
+            # Switch to iframe if needed
+            original_context = True
+            if iframe_id or iframe_name:
+                try:
+                    if iframe_id:
+                        iframe = driver.find_element(By.ID, iframe_id)
+                        driver.switch_to.frame(iframe)
+                    elif iframe_name:
+                        driver.switch_to.frame(iframe_name)
+                    original_context = False
+                except Exception as iframe_e:
+                    return f"Error switching to iframe for setting value: {str(iframe_e)}"
             
             # Find the element again using the same xpath
             element = driver.find_element(By.XPATH, xpath)
@@ -1107,7 +1202,10 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
         
         # Check if element is an input-like element that can accept values
         input_like_tags = ['input', 'textarea', 'select']
-        if tag_name.lower() not in input_like_tags:
+        if tag_name and tag_name.lower() not in input_like_tags:
+            # Switch back to default content before returning if needed
+            if not original_context:
+                driver.switch_to.default_content()
             return f"Error: Found element with tag '{tag_name}' is not an input-like element that can accept values"
         
         # Clear existing value
@@ -1119,11 +1217,23 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
         # Verify the value was set (for most input types)
         current_value = element.get_attribute('value')
         
+        # Switch back to default content
+        if not original_context:
+            driver.switch_to.default_content()
+        
         return f"Successfully set value '{input_value}' to {tag_name} element with id='{element_id}', class='{element_class}'. Current value: '{current_value}'"
     
     except Exception as e:
         error_msg = f"Error setting value to element: {str(e)}"
         logger.error(error_msg)
+        
+        # Switch back to default content in case of error
+        try:
+            if 'original_context' in locals() and not original_context:
+                driver.switch_to.default_content()
+        except:
+            pass
+            
         return error_msg
 
 def is_json_string(value: str) -> bool:

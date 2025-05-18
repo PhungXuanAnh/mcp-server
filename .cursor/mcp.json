@@ -1,18 +1,5 @@
 {
     "mcpServers": {
-        "selenium": {
-            "command": "/home/xuananh/repo/mcp-server/.venv/bin/python",
-            "args": [
-                "/home/xuananh/repo/mcp-server/src/selenium/control_already_open_chrome_sync_server.py"
-            ]
-        },
-        "git1": {
-            "command": "/home/xuananh/repo/mcp-server/src/git/.venv/bin/python",
-            "args": [
-                "-m",
-                "mcp_server_git"
-            ]
-        },
         "sample": {
             "command": "/home/xuananh/repo/mcp-server/.venv/bin/python",
             "args": [
