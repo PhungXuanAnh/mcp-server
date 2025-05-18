@@ -849,7 +849,7 @@ def get_network_errors(filter_url_by_text: str = '') -> str:
         return f"Error getting network errors: {str(e)}"
 
 @mcp.tool()
-def get_an_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '') -> str:
+def get_an_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', return_html: bool = False) -> str:
     """Get an element identified by text content, class name, or ID.
     
     This tool finds an element based on specified criteria. At least one 
@@ -864,9 +864,11 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
         element_type: HTML element type to find (e.g. 'div', 'input', 'h1', 'button', etc.).
         in_iframe_id: ID of the iframe to search within. If provided, the function will switch to this iframe before searching.
         in_iframe_name: Name of the iframe to search within. If provided and in_iframe_id is not provided, the function will switch to this iframe before searching.
+        return_html: Return the HTML content of the element instead of JSON information.
     
     Returns:
         A JSON string with information about the found element or an error message.
+        If return_html is True, returns the HTML content of the element.
     """
     global driver
     if driver is None:
@@ -966,7 +968,33 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
         # Get the element
         element = elements[0]
         
-        # Get element properties
+        # If return_html is True, return the HTML content instead of JSON
+        if return_html:
+            try:
+                # Get innerHTML or outerHTML
+                inner_html = element.get_attribute("innerHTML")
+                outer_html = element.get_attribute("outerHTML")
+                
+                # Switch back to original context
+                if not original_context:
+                    driver.switch_to.default_content()
+                
+                return json.dumps({
+                    "innerHTML": inner_html,
+                    "outerHTML": outer_html
+                })
+                
+            except Exception as html_e:
+                error_msg = f"Error getting HTML content: {str(html_e)}"
+                logger.error(error_msg)
+                
+                # Switch back to original context in case of error
+                if not original_context:
+                    driver.switch_to.default_content()
+                
+                return error_msg
+        
+        # Get element properties for standard JSON response
         try:
             tag_name = element.tag_name
         except:
@@ -1019,7 +1047,7 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
         return error_msg
 
 @mcp.tool()
-def get_elements(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', page: int = 1, page_size: int = 3) -> str:
+def get_elements(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', page: int = 1, page_size: int = 3, return_html: bool = False) -> str:
     """Get multiple elements identified by text content, class name, or ID with pagination.
     
     This tool finds elements based on specified criteria. At least one 
@@ -1036,9 +1064,11 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
         in_iframe_name: Name of the iframe to search within. If provided and in_iframe_id is not provided, the function will switch to this iframe before searching.
         page: Current page of elements returned in the response (default: 1).
         page_size: Number of elements to return in the response (default: 3).
+        return_html: Return the HTML content of the elements instead of JSON information.
     
     Returns:
         A JSON string with information about the found elements or an error message.
+        If return_html is True, includes HTML content of the elements.
     """
     global driver
     if driver is None:
@@ -1171,32 +1201,50 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
         
         # Process each element
         for element in paginated_elements:
-            try:
-                tag_name = element.tag_name
-            except:
-                tag_name = "unknown"
+            if return_html:
+                # Get HTML content for this element
+                try:
+                    inner_html = element.get_attribute("innerHTML")
+                    outer_html = element.get_attribute("outerHTML")
+                    
+                    elements_info.append({
+                        "innerHTML": inner_html,
+                        "outerHTML": outer_html
+                    })
+                except Exception as html_e:
+                    elements_info.append({
+                        "error": f"Error getting HTML: {str(html_e)}",
+                        "innerHTML": "",
+                        "outerHTML": ""
+                    })
+            else:
+                # Get standard element info
+                try:
+                    tag_name = element.tag_name
+                except:
+                    tag_name = "unknown"
+                    
+                try:
+                    element_id = element.get_attribute("id") or "no-id"
+                except:
+                    element_id = "unknown"
+                    
+                try:
+                    element_class = element.get_attribute("class") or "no-class"
+                except:
+                    element_class = "unknown"
+                    
+                try:
+                    element_text = element.text[:50] + "..." if len(element.text) > 50 else element.text
+                except:
+                    element_text = "unknown"
                 
-            try:
-                element_id = element.get_attribute("id") or "no-id"
-            except:
-                element_id = "unknown"
-                
-            try:
-                element_class = element.get_attribute("class") or "no-class"
-            except:
-                element_class = "unknown"
-                
-            try:
-                element_text = element.text[:50] + "..." if len(element.text) > 50 else element.text
-            except:
-                element_text = "unknown"
-            
-            elements_info.append({
-                "tag_name": tag_name,
-                "id": element_id,
-                "class": element_class,
-                "text": element_text
-            })
+                elements_info.append({
+                    "tag_name": tag_name,
+                    "id": element_id,
+                    "class": element_class,
+                    "text": element_text
+                })
         
         # Return elements info as JSON
         result = {
