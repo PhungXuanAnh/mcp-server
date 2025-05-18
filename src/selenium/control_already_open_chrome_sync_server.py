@@ -849,7 +849,7 @@ def get_network_errors(filter_url_by_text: str = '') -> str:
         return f"Error getting network errors: {str(e)}"
 
 @mcp.tool()
-def get_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '') -> str:
+def get_an_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '') -> str:
     """Get an element identified by text content, class name, or ID.
     
     This tool finds an element based on specified criteria. At least one 
@@ -1019,6 +1019,226 @@ def get_element(text: str = '', class_name: str = '', id: str = '', attributes: 
         return error_msg
 
 @mcp.tool()
+def get_elements(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', page: int = 1, page_size: int = 3) -> str:
+    """Get multiple elements identified by text content, class name, or ID with pagination.
+    
+    This tool finds elements based on specified criteria. At least one 
+    of text, class_name, id, or attributes must be provided. Unlike get_an_element,
+    this function returns multiple elements with pagination support.
+    
+    Args:
+        text: Text content of the elements to find. Case-sensitive text matching.
+        class_name: CSS class name of the elements to find.
+        id: ID attribute of the elements to find.
+        attributes: Dictionary of attribute name-value pairs to match (e.g. {'data-test': 'button'}).
+        element_type: HTML element type to find (e.g. 'div', 'input', 'h1', 'button', etc.).
+        in_iframe_id: ID of the iframe to search within. If provided, the function will switch to this iframe before searching.
+        in_iframe_name: Name of the iframe to search within. If provided and in_iframe_id is not provided, the function will switch to this iframe before searching.
+        page: Current page of elements returned in the response (default: 1).
+        page_size: Number of elements to return in the response (default: 3).
+    
+    Returns:
+        A JSON string with information about the found elements or an error message.
+    """
+    global driver
+    if driver is None:
+        logger.info("WebDriver is not initialized, initializing now...")
+        try:
+            driver = initialize_driver()
+            logger.info("WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize WebDriver: {str(e)}")
+            return f"Failed to initialize WebDriver: {str(e)}"
+    
+    if text == '' and class_name == '' and id == '' and not attributes and element_type == '':
+        return "Error: At least one of text, class_name, id, attributes, or element_type must be provided"
+    
+    # Validate pagination parameters
+    if page < 1:
+        return "Error: Page must be at least 1"
+    if page_size < 1:
+        return "Error: Page size must be at least 1"
+    
+    try:
+        # Remember the original context to switch back later
+        original_context = True
+        
+        # Switch to iframe if specified
+        if in_iframe_id or in_iframe_name:
+            logger.info(f"Switching to iframe with id='{in_iframe_id}' or name='{in_iframe_name}'")
+            try:
+                if in_iframe_id:
+                    # First try to find the iframe by ID
+                    iframe = driver.find_element(By.ID, in_iframe_id)
+                    driver.switch_to.frame(iframe)
+                    logger.info(f"Successfully switched to iframe with id='{in_iframe_id}'")
+                elif in_iframe_name:
+                    # If ID not provided, try by name
+                    driver.switch_to.frame(in_iframe_name)
+                    logger.info(f"Successfully switched to iframe with name='{in_iframe_name}'")
+                original_context = False
+            except Exception as iframe_e:
+                error_msg = f"Error switching to iframe: {str(iframe_e)}"
+                logger.error(error_msg)
+                return error_msg
+        
+        # Build XPath conditions based on provided arguments
+        conditions = []
+        
+        if id != '':
+            conditions.append(f"@id='{id}'")
+        
+        if class_name != '':
+            # Handle multiple class names by ensuring each is present
+            for cn in class_name.split():
+                conditions.append(f"contains(@class, '{cn}')")
+        
+        if text != '':
+            conditions.append(f"contains(text(), '{text}')")
+            
+        # Add conditions for additional attributes
+        for attr_name, attr_value in attributes.items():
+            conditions.append(f"@{attr_name}='{attr_value}'")
+        
+        # Combine conditions with 'and'
+        xpath = "//" + (element_type if element_type != '' else "*")
+        if conditions:
+            xpath += "[" + " and ".join(conditions) + "]"
+        
+        logger.info(f"Looking for elements with XPath: {xpath}")
+        all_elements = driver.find_elements(By.XPATH, xpath)
+        
+        total_elements = len(all_elements)
+        total_pages = (total_elements + page_size - 1) // page_size if total_elements > 0 else 1
+        
+        # Check if we found any elements
+        if total_elements == 0:
+            criteria_str = []
+            if text != '':
+                criteria_str.append(f"text='{text}'")
+            if class_name != '':
+                criteria_str.append(f"class='{class_name}'")
+            if id != '':
+                criteria_str.append(f"id='{id}'")
+            if element_type != '':
+                criteria_str.append(f"element_type='{element_type}'")
+            for attr_name, attr_value in attributes.items():
+                criteria_str.append(f"{attr_name}='{attr_value}'")
+            
+            error_msg = f"No elements found matching criteria: {', '.join(criteria_str)}"
+            logger.error(error_msg)
+            
+            # Switch back to original context before returning
+            if not original_context:
+                driver.switch_to.default_content()
+                
+            return json.dumps({
+                "found": False,
+                "error": error_msg,
+                "total_elements": 0,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": 0,
+                "elements": []
+            })
+        
+        # Calculate pagination indices
+        start_idx = (page - 1) * page_size
+        end_idx = min(start_idx + page_size, total_elements)
+        
+        # Check if the requested page is valid
+        if start_idx >= total_elements:
+            error_msg = f"Page {page} exceeds total available pages ({total_pages})"
+            logger.error(error_msg)
+            
+            # Switch back to original context before returning
+            if not original_context:
+                driver.switch_to.default_content()
+                
+            return json.dumps({
+                "found": True,
+                "error": error_msg,
+                "total_elements": total_elements,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "elements": []
+            })
+        
+        # Get the paginated elements
+        paginated_elements = all_elements[start_idx:end_idx]
+        elements_info = []
+        
+        # Process each element
+        for element in paginated_elements:
+            try:
+                tag_name = element.tag_name
+            except:
+                tag_name = "unknown"
+                
+            try:
+                element_id = element.get_attribute("id") or "no-id"
+            except:
+                element_id = "unknown"
+                
+            try:
+                element_class = element.get_attribute("class") or "no-class"
+            except:
+                element_class = "unknown"
+                
+            try:
+                element_text = element.text[:50] + "..." if len(element.text) > 50 else element.text
+            except:
+                element_text = "unknown"
+            
+            elements_info.append({
+                "tag_name": tag_name,
+                "id": element_id,
+                "class": element_class,
+                "text": element_text
+            })
+        
+        # Return elements info as JSON
+        result = {
+            "found": True,
+            "total_elements": total_elements,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": total_pages,
+            "elements": elements_info,
+            "xpath": xpath,
+            "in_iframe_id": in_iframe_id,
+            "in_iframe_name": in_iframe_name
+        }
+        
+        # Switch back to original context
+        if not original_context:
+            driver.switch_to.default_content()
+            
+        return json.dumps(result)
+    
+    except Exception as e:
+        error_msg = f"Error finding elements: {str(e)}"
+        logger.error(error_msg)
+        
+        # Switch back to original context in case of error
+        try:
+            if 'original_context' in locals() and not original_context:
+                driver.switch_to.default_content()
+        except:
+            pass
+            
+        return json.dumps({
+            "found": False,
+            "error": error_msg,
+            "total_elements": 0,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": 0,
+            "elements": []
+        })
+
+@mcp.tool()
 def click_to_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '') -> str:
     """Click on an element identified by text content, class name, or ID.
     
@@ -1050,7 +1270,7 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
     
     try:
         # Get element using the get_element function
-        element_info = get_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
+        element_info = get_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
         
         # Parse the JSON result
         try:
@@ -1163,7 +1383,7 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
     
     try:
         # Get element using the get_element function
-        element_info = get_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
+        element_info = get_an_element(text, class_name, id, attributes, element_type, in_iframe_id, in_iframe_name)
         
         # Parse the JSON result
         try:
