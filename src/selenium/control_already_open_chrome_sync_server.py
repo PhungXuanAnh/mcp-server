@@ -1,29 +1,24 @@
-# Standard library imports
 import json
 import logging
 import socket
 import subprocess
 import time
 from datetime import datetime
-from enum import Enum
 from logging.config import dictConfig
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-# Third-party imports
 import click
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field
+
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-# Configure logging
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -71,58 +66,6 @@ mcp = FastMCP(
     name="mcp-selenium-sync",
 )
 
-# Define the data models for our tools
-class Navigate(BaseModel):
-    url: str
-    timeout: int = Field(default=60, description="Timeout in seconds for page load")
-
-class TakeScreenshot(BaseModel):
-    pass
-
-class CheckPageReady(BaseModel):
-    wait_seconds: int = Field(default=0, description="Optional seconds to wait before checking")
-
-class GetConsoleLogs(BaseModel):
-    pass
-
-class GetConsoleErrors(BaseModel):
-    pass
-
-class GetNetworkLogs(BaseModel):
-     filter_url_by_text: str = Field(default='', description="Optional string to filter the network logs by url")
-    
-
-class GetNetworkErrors(BaseModel):
-    filter_url_by_text: str = Field(default='', description="Optional string to filter the network logs by url")
-
-class ClickElement(BaseModel):
-    text: Optional[str] = Field(default=None, description="Text content of the element to click")
-    class_name: Optional[str] = Field(default=None, description="Class name of the element to click")
-    id: Optional[str] = Field(default=None, description="ID of the element to click")
-    attributes: Dict[str, Any] = Field(default_factory=dict, description="Dictionary of attribute name-value pairs to match")
-    element_type: Optional[str] = Field(default=None, description="HTML element type to find")
-    in_iframe_id: Optional[str] = Field(default=None, description="ID of the iframe to search within")
-    in_iframe_name: Optional[str] = Field(default=None, description="Name of the iframe to search within")
-    element_index: int = Field(default=-1, description="Index of the element to click if multiple elements match the criteria. -1 means don't use this parameter.")
-
-class LocalStorageAdd(BaseModel):
-    key: str = Field(description="Key for the local storage item")
-    string_value: str = Field(default='', description="String value to store in local storage")
-    object_value: Dict[str, Any] = Field(default_factory=dict, description="Object value to store in local storage as JSON")
-    create_empty_string: bool = Field(default=False, description="Whether to create an empty string value if string_value is empty")
-    create_empty_object: bool = Field(default=False, description="Whether to create an empty object value if object_value is empty")
-
-class LocalStorageRead(BaseModel):
-    key: str = Field(description="Key of the local storage item to read")
-
-class LocalStorageRemove(BaseModel):
-    key: str = Field(description="Key of the local storage item to remove")
-
-class LocalStorageReadAll(BaseModel):
-    pass
-
-class LocalStorageRemoveAll(BaseModel):
-    pass
 
 def check_chrome_debugger_port(port: int = 9222) -> bool:
     """Check if Chrome is running with remote debugging port open"""
@@ -293,119 +236,6 @@ def open_devtools_and_wait(panel: str) -> None:
     # Return to original window
     driver.switch_to.window(original_window)
 
-def get_devtools_logs(panel: str, log_type: str = "all") -> List[Dict[str, Any]]:
-    """Get logs from DevTools panel"""
-    global driver
-    if driver is None:
-        raise RuntimeError("WebDriver is not initialized")
-    
-    try:
-        # Open DevTools with specified panel
-        open_devtools_and_wait(panel)
-        
-        # Find DevTools window
-        devtools_window = None
-        original_window = driver.current_window_handle
-        for window_handle in driver.window_handles:
-            if window_handle != original_window:
-                devtools_window = window_handle
-                break
-        
-        if not devtools_window:
-            raise RuntimeError("DevTools window not found")
-        
-        # Switch to DevTools window
-        driver.switch_to.window(devtools_window)
-        
-        # Execute appropriate script based on panel and log type
-        if panel == "console":
-            if log_type == "errors":
-                script = """
-                const logs = Array.from(document.querySelectorAll('.console-message-wrapper'))
-                    .filter(el => el.classList.contains('console-error-level'))
-                    .map(el => {
-                        return {
-                            type: 'error',
-                            message: el.querySelector('.console-message-text').textContent,
-                            timestamp: el.querySelector('.console-message-timestamp')?.textContent || ''
-                        };
-                    });
-                return logs;
-                """
-            else:
-                script = """
-                const logs = Array.from(document.querySelectorAll('.console-message-wrapper'))
-                    .map(el => {
-                        let type = 'info';
-                        if (el.classList.contains('console-error-level')) type = 'error';
-                        else if (el.classList.contains('console-warning-level')) type = 'warning';
-                        else if (el.classList.contains('console-info-level')) type = 'info';
-                        else if (el.classList.contains('console-verbose-level')) type = 'verbose';
-                        
-                        return {
-                            type: type,
-                            message: el.querySelector('.console-message-text').textContent,
-                            timestamp: el.querySelector('.console-message-timestamp')?.textContent || ''
-                        };
-                    });
-                return logs;
-                """
-        elif panel == "network":
-            if log_type == "errors":
-                script = """
-                const logs = Array.from(document.querySelectorAll('.network-item'))
-                    .filter(el => {
-                        const statusCell = el.querySelector('.status-column');
-                        const statusCode = parseInt(statusCell?.textContent || '0');
-                        return statusCode >= 400;
-                    })
-                    .map(el => {
-                        return {
-                            url: el.querySelector('.name-column')?.textContent || '',
-                            status: el.querySelector('.status-column')?.textContent || '',
-                            method: el.querySelector('.method-column')?.textContent || '',
-                            type: el.querySelector('.type-column')?.textContent || '',
-                            size: el.querySelector('.size-column')?.textContent || '',
-                            time: el.querySelector('.time-column')?.textContent || ''
-                        };
-                    });
-                return logs;
-                """
-            else:
-                script = """
-                const logs = Array.from(document.querySelectorAll('.network-item'))
-                    .map(el => {
-                        return {
-                            url: el.querySelector('.name-column')?.textContent || '',
-                            status: el.querySelector('.status-column')?.textContent || '',
-                            method: el.querySelector('.method-column')?.textContent || '',
-                            type: el.querySelector('.type-column')?.textContent || '',
-                            size: el.querySelector('.size-column')?.textContent || '',
-                            time: el.querySelector('.time-column')?.textContent || ''
-                        };
-                    });
-                return logs;
-                """
-        else:
-            raise ValueError(f"Unsupported DevTools panel: {panel}")
-        
-        logs = driver.execute_script(script)
-        
-        # Close DevTools window and switch back to original
-        driver.close()
-        driver.switch_to.window(original_window)
-        
-        return logs
-        
-    except Exception as e:
-        logger.error(f"Error getting logs from {panel} panel: {str(e)}")
-        # Make sure we're back on the original window
-        for window_handle in driver.window_handles:
-            if window_handle == original_window:
-                driver.switch_to.window(original_window)
-                break
-        raise
-
 def get_browser_logs(driver: webdriver.Chrome, log_type='browser'):
     """Get logs from the browser and format them"""
     if driver is None:
@@ -530,18 +360,6 @@ def get_network_logs_from_performance(driver: webdriver.Chrome, filter_url_by_te
     except Exception as e:
         logger.error(f"Error getting network logs from performance: {str(e)}")
         return []
-
-def get_response_body(driver: webdriver.Chrome, request_id: str):
-    """Get the response body for a specific request using CDP command"""
-    if driver is None:
-        return None
-    
-    try:
-        result = driver.execute_cdp_cmd('Network.getResponseBody', {'requestId': request_id})
-        return result
-    except Exception as e:
-        logger.error(f"Error getting response body: {str(e)}")
-        return None
 
 @mcp.tool()
 def navigate(url: str, timeout: int = 60) -> str:
