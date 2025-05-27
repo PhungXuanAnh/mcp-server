@@ -467,6 +467,7 @@ def navigate(url: str, timeout: int = 60) -> str:
                     
                     # Try to navigate again
                     try:
+                        driver.set_page_load_timeout(navigation_timeout)
                         driver.get(url)
                         return f"Chrome was restarted and navigation to {url} initiated"
                     except Exception as nav_e:
@@ -554,14 +555,18 @@ def check_page_ready(wait_seconds: int = 0) -> str:
         raise Exception(f"Error checking page ready state: {str(e)}")
 
 @mcp.tool()
-def get_console_logs() -> str:
-    """Retrieve all console logs from the browser.
+def get_console_logs(log_level: str = "") -> str:
+    """Retrieve console logs from the browser with optional filtering by log level.
     
-    This tool collects all console logs (info, warnings, errors) that have been output
-    in the browser's JavaScript console since the page was loaded.
+    This tool collects console logs that have been output in the browser's JavaScript console 
+    since the page was loaded. Results can be filtered by log level.
+    
+    Args:
+        log_level: The log level to filter by (e.g., "INFO", "WARNING", "ERROR", "SEVERE").
+            When empty, returns all log levels.
     
     Returns:
-        A JSON string containing all console log entries, including their type and message.
+        A JSON string containing console log entries, including their type and message.
     """
     global driver
     try:
@@ -573,38 +578,15 @@ def get_console_logs() -> str:
         # Get browser logs
         logs = get_browser_logs(driver)
         
+        # Filter logs by level if specified
+        if log_level:
+            log_level = log_level.lower()
+            logs = [log for log in logs if log['type'].lower() == log_level]
+        
         return json.dumps(logs, indent=2)
     except Exception as e:
         logger.error(f"Error getting console logs: {str(e)}")
         return f"Error getting console logs: {str(e)}"
-
-@mcp.tool()
-def get_console_errors() -> str:
-    """Retrieve only error messages from the browser console.
-    
-    This tool collects only SEVERE and ERROR level messages that have been output
-    in the browser's JavaScript console, filtering out informational and warning messages.
-    
-    Returns:
-        A JSON string containing only console error messages.
-    """
-    global driver
-    try:
-        driver = ensure_driver_initialized()
-    except RuntimeError as e:
-        return f"Failed to initialize WebDriver: {str(e)}"
-    
-    try:
-        # Get all logs
-        all_logs = get_browser_logs(driver)
-        
-        # Filter for errors only - include SEVERE, ERROR levels
-        error_logs = [log for log in all_logs if log['type'].upper() in ('SEVERE', 'ERROR')]
-        
-        return json.dumps(error_logs, indent=2)
-    except Exception as e:
-        logger.error(f"Error getting console errors: {str(e)}")
-        return f"Error getting console errors: {str(e)}"
 
 @mcp.tool()
 def get_network_logs(filter_url_by_text: str = '') -> str:
