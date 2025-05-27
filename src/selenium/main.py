@@ -589,7 +589,7 @@ def get_console_logs(log_level: str = "") -> str:
         return f"Error getting console logs: {str(e)}"
 
 @mcp.tool()
-def get_network_logs(filter_url_by_text: str = '') -> str:
+def get_network_logs(filter_url_by_text: str = '', only_errors_log: bool = False) -> str:
     """Retrieve network request logs from the browser.
     
     This tool collects all network activity (requests and responses) that has occurred
@@ -599,6 +599,8 @@ def get_network_logs(filter_url_by_text: str = '') -> str:
         filter_url_by_text: Text to filter domain names by. When specified, only network
             requests to domains containing this text will be included. Default is empty
             string (no filtering).
+        only_errors_log: When True, only returns network requests with error status codes (4xx/5xx)
+            or other network failures. Default is False (returns all network logs).
     
     Returns:
         A JSON string containing the network request logs, grouped by request ID.
@@ -613,49 +615,23 @@ def get_network_logs(filter_url_by_text: str = '') -> str:
         # Get network logs from performance data
         network_logs = get_network_logs_from_performance(driver, filter_url_by_text)
         
+        # Filter for errors only if only_errors_log is True
+        if only_errors_log:
+            # Filter for errors only (status >= 400 or failed requests)
+            error_logs = []
+            for request_events in network_logs:
+                # Check if any event in this request group has an error
+                has_error = any(event.get('hasError', False) for event in request_events)
+                if has_error:
+                    error_logs.append(request_events)
+            
+            network_logs = error_logs
+        
         # Return formatted logs
         return json.dumps(network_logs, indent=2)
     except Exception as e:
         logger.error(f"Error getting network logs: {str(e)}")
         return f"Error getting network logs: {str(e)}"
-
-@mcp.tool()
-def get_network_errors(filter_url_by_text: str = '') -> str:
-    """Retrieve only failed network requests from the browser.
-    
-    This tool collects network activity with error status codes (4xx/5xx) or other
-    network failures. Results can optionally be filtered by domain.
-    
-    Args:
-        filter_url_by_text: Text to filter domain names by. When specified, only network
-            errors from domains containing this text will be included. Default is empty
-            string (no filtering).
-    
-    Returns:
-        A JSON string containing only failed network requests, grouped by request ID.
-    """
-    global driver
-    try:
-        driver = ensure_driver_initialized()
-    except RuntimeError as e:
-        return f"Failed to initialize WebDriver: {str(e)}"
-    
-    try:
-        # Get all network logs
-        all_logs = get_network_logs_from_performance(driver, filter_url_by_text)
-        
-        # Filter for errors only (status >= 400 or failed requests)
-        error_logs = []
-        for request_events in all_logs:
-            # Check if any event in this request group has an error
-            has_error = any(event.get('hasError', False) for event in request_events)
-            if has_error:
-                error_logs.append(request_events)
-        
-        return json.dumps(error_logs, indent=2)
-    except Exception as e:
-        logger.error(f"Error getting network errors: {str(e)}")
-        return f"Error getting network errors: {str(e)}"
 
 @mcp.tool()
 def get_an_element(text: str = '', class_name: str = '', id: str = '', attributes: dict = {}, element_type: str = '', in_iframe_id: str = '', in_iframe_name: str = '', return_html: bool = False, xpath: str = '') -> str:
