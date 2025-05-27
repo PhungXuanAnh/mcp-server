@@ -61,6 +61,9 @@ logger = logging.getLogger(__name__)
 # Global variable to store WebDriver instance
 driver: Optional[webdriver.Chrome] = None
 
+# Global variable for Chrome user data directory
+user_data_dir: str = ""
+
 # Initialize FastMCP
 mcp = FastMCP(
     name="mcp-selenium-sync",
@@ -79,11 +82,15 @@ def check_chrome_debugger_port(port: int = 9222) -> bool:
         logger.error(f"Error checking Chrome debugger port: {str(e)}")
         return False
 
-def start_chrome(port: int = 9222) -> bool:
+def start_chrome(port: int = 9222, custom_user_data_dir: str = "") -> bool:
     """Start Chrome with remote debugging enabled on specified port"""
+    global user_data_dir
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        user_data_dir = f"/tmp/chrome-debug-{timestamp}"
+        if custom_user_data_dir:
+            user_data_dir = custom_user_data_dir
+        elif not user_data_dir:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            user_data_dir = f"/tmp/chrome-debug-{timestamp}"
         
         logger.info(f"Starting Chrome with debugging port {port} and user data dir {user_data_dir}")
         
@@ -119,20 +126,23 @@ def start_chrome(port: int = 9222) -> bool:
         logger.error(f"Error starting Chrome: {str(e)}")
         return False
 
-def initialize_driver(browser: str = "chrome", headless: bool = False) -> webdriver.Chrome:
+def initialize_driver(custom_user_data_dir: str = "") -> webdriver.Chrome:
     """Initialize and return a WebDriver instance based on browser choice"""
     global driver
+    global user_data_dir
     
-    if browser.lower() != "chrome":
-        raise ValueError(f"Unsupported browser: {browser}. Only Chrome is supported.")
+    # Set user_data_dir if provided
+    if custom_user_data_dir:
+        user_data_dir = custom_user_data_dir
     
     # Check if Chrome is already running with remote debugging
     if not check_chrome_debugger_port():
         logger.info("Chrome not detected on port 9222, attempting to start a new instance")
         
         # Start Chrome with DevTools auto-open
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        user_data_dir = f"/tmp/chrome-debug-{timestamp}"
+        if not user_data_dir:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            user_data_dir = f"/tmp/chrome-debug-{timestamp}"
         
         logger.info(f"Starting Chrome with debugging port 9222 and user data dir {user_data_dir}")
         
@@ -238,9 +248,6 @@ def open_devtools_and_wait(panel: str) -> None:
 
 def get_browser_logs(driver: webdriver.Chrome, log_type='browser'):
     """Get logs from the browser and format them"""
-    if driver is None:
-        return []
-    
     logs = []
     try:
         browser_logs = driver.get_log(log_type)
@@ -361,6 +368,31 @@ def get_network_logs_from_performance(driver: webdriver.Chrome, filter_url_by_te
         logger.error(f"Error getting network logs from performance: {str(e)}")
         return []
 
+def ensure_driver_initialized() -> webdriver.Chrome:
+    """Ensure that the WebDriver is initialized.
+    
+    This function checks if the global WebDriver instance is initialized.
+    If not, it initializes a new WebDriver instance.
+    
+    Returns:
+        The initialized WebDriver instance.
+        
+    Raises:
+        RuntimeError: If the WebDriver fails to initialize.
+    """
+    global driver
+    global user_data_dir
+    
+    if driver is None:
+        logger.info("WebDriver is not initialized, initializing now...")
+        try:
+            driver = initialize_driver(custom_user_data_dir=user_data_dir)
+            logger.info("WebDriver initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize WebDriver: {str(e)}")
+            raise RuntimeError(f"Failed to initialize WebDriver: {str(e)}")
+    return driver
+
 @mcp.tool()
 def navigate(url: str, timeout: int = 60) -> str:
     """Navigate to a specified URL with the Chrome browser.
@@ -377,14 +409,10 @@ def navigate(url: str, timeout: int = 60) -> str:
         A message confirming navigation started or reporting any issues.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            raise RuntimeError(f"Failed to initialize WebDriver: {str(e)}")
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        raise RuntimeError(str(e))
     
     logger.info(f"Starting navigation to {url} with timeout {timeout} seconds")
     
@@ -463,14 +491,10 @@ def take_screenshot() -> str:
         The path to the saved screenshot file.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            raise RuntimeError(f"Failed to initialize WebDriver: {str(e)}")
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        raise RuntimeError(str(e))
     
     # Create the screenshot directory if it doesn't exist
     screenshot_dir = Path.home() / "selenium-mcp" / "screenshot"
@@ -500,14 +524,10 @@ def check_page_ready(wait_seconds: int = 0) -> str:
         A message indicating the current ready state of the page (complete, interactive, or loading).
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            raise RuntimeError(f"Failed to initialize WebDriver: {str(e)}")
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        raise RuntimeError(str(e))
     
     # Wait the specified number of seconds if requested
     if wait_seconds > 0:
@@ -544,14 +564,10 @@ def get_console_logs() -> str:
         A JSON string containing all console log entries, including their type and message.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
         # Get browser logs
@@ -573,14 +589,10 @@ def get_console_errors() -> str:
         A JSON string containing only console error messages.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
         # Get all logs
@@ -610,14 +622,10 @@ def get_network_logs(filter_url_by_text: str = '') -> str:
         A JSON string containing the network request logs, grouped by request ID.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
         # Get network logs from performance data
@@ -645,14 +653,10 @@ def get_network_errors(filter_url_by_text: str = '') -> str:
         A JSON string containing only failed network requests, grouped by request ID.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
         # Get all network logs
@@ -695,14 +699,10 @@ def get_an_element(text: str = '', class_name: str = '', id: str = '', attribute
         If return_html is True, returns the HTML content of the element.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     if text == '' and class_name == '' and id == '' and not attributes and element_type == '' and xpath == '':
         return "Error: At least one of text, class_name, id, attributes, element_type, or xpath must be provided"
@@ -903,14 +903,10 @@ def get_elements(text: str = '', class_name: str = '', id: str = '', attributes:
         If return_html is True, includes HTML content of the elements.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     if text == '' and class_name == '' and id == '' and not attributes and element_type == '' and xpath == '':
         return "Error: At least one of text, class_name, id, attributes, element_type, or xpath must be provided"
@@ -1177,14 +1173,10 @@ def click_to_element(text: str = '', class_name: str = '', id: str = '', attribu
         A message indicating whether the click was successful or an error message.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
         # Store current URL before the click
@@ -1369,14 +1361,10 @@ def set_value_to_input_element(text: str = '', class_name: str = '', id: str = '
         A message indicating whether setting the value was successful or an error message.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
         # Get element using the get_element function
@@ -1472,14 +1460,10 @@ def local_storage_add(key: str, string_value: str = '', object_value: dict = {},
         A message indicating whether the operation was successful.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
         # Determine the value to use
@@ -1530,14 +1514,10 @@ def local_storage_read(key: str) -> str:
         The value associated with the key, or a message if the key doesn't exist.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
         # Execute JavaScript to get the value from local storage
@@ -1568,14 +1548,10 @@ def local_storage_remove(key: str) -> str:
         A message indicating whether the operation was successful.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
         # First check if the key exists
@@ -1615,14 +1591,10 @@ def local_storage_read_all() -> str:
         A JSON string containing all localStorage items, or a message if localStorage is empty.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
         # Execute JavaScript to get all items from local storage
@@ -1657,14 +1629,10 @@ def local_storage_remove_all() -> str:
         A message indicating whether the operation was successful.
     """
     global driver
-    if driver is None:
-        logger.info("WebDriver is not initialized, initializing now...")
-        try:
-            driver = initialize_driver()
-            logger.info("WebDriver initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize WebDriver: {str(e)}")
-            return f"Failed to initialize WebDriver: {str(e)}"
+    try:
+        driver = ensure_driver_initialized()
+    except RuntimeError as e:
+        return f"Failed to initialize WebDriver: {str(e)}"
     
     try:
         # First check if there are any items in localStorage
@@ -1691,23 +1659,25 @@ def local_storage_remove_all() -> str:
 # Main entry point
 if __name__ == "__main__":
     @click.command()
-    @click.option("--browser", "-b", default="chrome", help="Browser to use (chrome)")
-    @click.option("--headless", is_flag=True, help="Run browser in headless mode")
+    @click.option("--user_data_dir", "user_data_dir_param", help="Chrome user data directory (default: /tmp/chrome-debug-{timestamp})")
     @click.option("-v", "--verbose", count=True)
-    def main(browser: str, headless: bool, verbose: int) -> None:
+    def main(user_data_dir_param: str, verbose: int) -> None:
         """Selenium MCP Server - Synchronous version"""
+        global user_data_dir
+        
         # Setup logging based on verbosity
         if verbose == 1:
             logging.getLogger().setLevel(logging.INFO)
         elif verbose >= 2:
             logging.getLogger().setLevel(logging.DEBUG)
         
+        # Set global user_data_dir from command line argument
+        if user_data_dir_param:
+            user_data_dir = user_data_dir_param
+        
         # Initialize the WebDriver
         logger.info(f"Checking for Chrome instance at 127.0.0.1:9222")
         try:
-            initialize_driver(browser, headless)
-            logger.info("WebDriver initialized successfully")
-            
             # Run the MCP server
             logger.info("Starting MCP Selenium server")
             mcp.run(transport='stdio')
