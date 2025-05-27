@@ -64,27 +64,32 @@ driver: Optional[webdriver.Chrome] = None
 # Global variable for Chrome user data directory
 user_data_dir: str = ""
 
+# Global variable for Chrome debugging port
+debug_port: int = 9222
+
 # Initialize FastMCP
 mcp = FastMCP(
     name="mcp-selenium-sync",
 )
 
 
-def check_chrome_debugger_port(port: int = 9222) -> bool:
+def check_chrome_debugger_port() -> bool:
     """Check if Chrome is running with remote debugging port open"""
+    global debug_port
     try:
         # Try to connect to the port
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(1)
-            result = s.connect_ex(('127.0.0.1', port))
+            result = s.connect_ex(('127.0.0.1', debug_port))
             return result == 0
     except Exception as e:
         logger.error(f"Error checking Chrome debugger port: {str(e)}")
         return False
 
-def start_chrome(port: int = 9222, custom_user_data_dir: str = "") -> bool:
+def start_chrome(custom_user_data_dir: str = "") -> bool:
     """Start Chrome with remote debugging enabled on specified port"""
     global user_data_dir
+    global debug_port
     try:
         if custom_user_data_dir:
             user_data_dir = custom_user_data_dir
@@ -92,12 +97,12 @@ def start_chrome(port: int = 9222, custom_user_data_dir: str = "") -> bool:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             user_data_dir = f"/tmp/chrome-debug-{timestamp}"
         
-        logger.info(f"Starting Chrome with debugging port {port} and user data dir {user_data_dir}")
+        logger.info(f"Starting Chrome with debugging port {debug_port} and user data dir {user_data_dir}")
         
         # Start Chrome as a subprocess
         cmd = [
             "google-chrome-stable",
-            f"--remote-debugging-port={port}",
+            f"--remote-debugging-port={debug_port}",
             f"--user-data-dir={user_data_dir}",
             "--no-first-run",
             "--no-default-browser-check",
@@ -116,8 +121,8 @@ def start_chrome(port: int = 9222, custom_user_data_dir: str = "") -> bool:
         time.sleep(3)
         
         # Check if Chrome started correctly
-        if check_chrome_debugger_port(port):
-            logger.info(f"Chrome started successfully on port {port}")
+        if check_chrome_debugger_port():
+            logger.info(f"Chrome started successfully on port {debug_port}")
             return True
         else:
             logger.error("Failed to start Chrome or confirm debugging port is open")
@@ -130,6 +135,7 @@ def initialize_driver(custom_user_data_dir: str = "") -> webdriver.Chrome:
     """Initialize and return a WebDriver instance based on browser choice"""
     global driver
     global user_data_dir
+    global debug_port
     
     # Set user_data_dir if provided
     if custom_user_data_dir:
@@ -137,19 +143,19 @@ def initialize_driver(custom_user_data_dir: str = "") -> webdriver.Chrome:
     
     # Check if Chrome is already running with remote debugging
     if not check_chrome_debugger_port():
-        logger.info("Chrome not detected on port 9222, attempting to start a new instance")
+        logger.info(f"Chrome not detected on port {debug_port}, attempting to start a new instance")
         
         # Start Chrome with DevTools auto-open
         if not user_data_dir:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             user_data_dir = f"/tmp/chrome-debug-{timestamp}"
         
-        logger.info(f"Starting Chrome with debugging port 9222 and user data dir {user_data_dir}")
+        logger.info(f"Starting Chrome with debugging port {debug_port} and user data dir {user_data_dir}")
         
         # Start Chrome as a subprocess with DevTools auto-open
         cmd = [
             "google-chrome-stable",
-            "--remote-debugging-port=9222",
+            f"--remote-debugging-port={debug_port}",
             f"--user-data-dir={user_data_dir}",
             "--no-first-run",
             "--no-default-browser-check",
@@ -171,11 +177,11 @@ def initialize_driver(custom_user_data_dir: str = "") -> webdriver.Chrome:
         if not check_chrome_debugger_port():
             raise RuntimeError("Failed to start Chrome browser")
     else:
-        logger.info("Chrome already running with remote debugging port 9222")
+        logger.info(f"Chrome already running with remote debugging port {debug_port}")
     
     # Setup capabilities to enable browser logging
     options = ChromeOptions()
-    options.debugger_address = "127.0.0.1:9222"
+    options.debugger_address = f"127.0.0.1:{debug_port}"
     
     # Set logging preferences for both browser logs and performance logs
     options.set_capability('goog:loggingPrefs', {
@@ -1618,10 +1624,12 @@ def local_storage_remove_all() -> str:
 if __name__ == "__main__":
     @click.command()
     @click.option("--user_data_dir", "user_data_dir_param", help="Chrome user data directory (default: /tmp/chrome-debug-{timestamp})")
+    @click.option("--port", "port_param", type=int, help="Port for Chrome remote debugging (default: 9222)")
     @click.option("-v", "--verbose", count=True)
-    def main(user_data_dir_param: str, verbose: int) -> None:
+    def main(user_data_dir_param: str, port_param: int, verbose: int) -> None:
         """Selenium MCP Server - Synchronous version"""
         global user_data_dir
+        global debug_port
         
         # Setup logging based on verbosity
         if verbose == 1:
@@ -1632,9 +1640,12 @@ if __name__ == "__main__":
         # Set global user_data_dir from command line argument
         if user_data_dir_param:
             user_data_dir = user_data_dir_param
+            
+        # Set global debug_port from command line argument
+        if port_param:
+            debug_port = port_param
         
-        # Initialize the WebDriver
-        logger.info(f"Checking for Chrome instance at 127.0.0.1:9222")
+        logger.info(f"Running MCP Selenium server with Chrome configured at 127.0.0.1:{debug_port}, user data dir: {user_data_dir}")
         try:
             # Run the MCP server
             logger.info("Starting MCP Selenium server")
