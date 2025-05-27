@@ -604,7 +604,7 @@ def get_network_logs(filter_url_by_text: str = '', only_errors_log: bool = False
     Args:
         filter_url_by_text: Text to filter domain names by. When specified, only network
             requests to domains containing this text will be included. Default is empty
-            string (no filtering).
+            string (no filtering). You should filter by domain because the network logs are too many.
         only_errors_log: When True, only returns network requests with error status codes (4xx/5xx)
             or other network failures. Default is False (returns all network logs).
     
